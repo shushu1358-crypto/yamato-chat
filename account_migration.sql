@@ -75,3 +75,21 @@ alter table public.messages
 grant select, insert, update, delete
 on table public.chat_users, public.messages
 to service_role;
+
+
+-- V2.3.2: chat messages use the account display name, not the login username.
+alter table public.chat_users
+  add column if not exists display_name text;
+
+update public.chat_users cu
+set display_name = a.display_name
+from public.accounts a
+where a.username = cu.username
+  and (cu.display_name is null or cu.display_name = '');
+
+alter table public.chat_users
+  alter column display_name set default '';
+
+grant select, insert, update, delete
+on table public.chat_users
+to service_role;

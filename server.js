@@ -560,7 +560,7 @@ async function getHistory(channelKey) {
       attachment_name,
       attachment_type,
       attachment_size,
-      chat_users(username, avatar_url)
+      chat_users(username, display_name, avatar_url)
     `)
     .eq("channel_id", channelId)
     .order("created_at", { ascending: false })
@@ -574,7 +574,7 @@ async function getHistory(channelKey) {
   return (data || []).reverse().map(row => ({
     id: row.id,
     userId: row.user_id,
-    user: row.chat_users?.username || "Unknown",
+    user: row.chat_users?.display_name || row.chat_users?.username || "Unknown",
     avatarUrl: row.chat_users?.avatar_url || null,
     text: row.content,
     time: row.created_at,
@@ -593,10 +593,10 @@ async function ensureChatUser(account) {
   const { data, error } = await supabase
     .from("chat_users")
     .upsert(
-      { username: account.username, avatar_url: account.avatar_url || null },
+      { username: account.username, display_name: account.display_name || account.username, avatar_url: account.avatar_url || null },
       { onConflict: "username" }
     )
-    .select("id, username, avatar_url")
+    .select("id, username, display_name, avatar_url")
     .single();
 
   if (error) throw error;
