@@ -67,6 +67,19 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .profile-panel h3{margin:0 0 12px}.profile-panel .row{margin:10px 0}.profile-panel .label{font-size:11px;color:var(--muted)}.profile-panel .value{word-break:break-all}
 .profile-panel button{margin-top:10px;width:100%;padding:10px;border:0;border-radius:7px;cursor:pointer;background:var(--hover);color:white}
 .profile-panel .logout{background:#7a3030}
+.profile-avatar-preview{width:72px;height:72px;border-radius:50%;object-fit:cover;background:var(--accent2);display:grid;place-items:center;font-size:26px;font-weight:700;margin-bottom:10px}
+.profile-edit{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.profile-edit label{display:block;font-size:11px;color:var(--muted);margin:8px 0 5px}
+.profile-edit input,.profile-edit textarea{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:7px;background:#1f2028;color:white;font:inherit}
+.profile-edit textarea{resize:vertical;min-height:70px}
+.profile-edit button{margin-top:8px;background:var(--accent)}
+.profile-edit .secondary{background:var(--hover)}
+.file-row{display:flex;gap:8px;align-items:center}
+.attach-btn{width:42px;border:0;border-radius:7px;background:var(--hover);color:white;cursor:pointer;font-size:20px}
+.attachment{margin-top:8px}
+.attachment img{display:block;max-width:min(420px,70vw);max-height:320px;border-radius:8px;object-fit:contain}
+.attachment a{display:inline-block;color:#6ea8ff;text-decoration:none;background:var(--panel2);padding:8px 10px;border-radius:7px}
+.attachment-meta{font-size:11px;color:var(--muted);margin-top:4px}
 @media(max-width:800px){.app{grid-template-columns:170px 1fr}.members{display:none}}
 @media(max-width:560px){.app{grid-template-columns:1fr}.sidebar{display:none}.messages{padding:14px}}
 </style>
@@ -150,9 +163,12 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
     <div id="messages" class="messages"></div>
     <div class="composer">
       <form id="messageForm">
+        <input type="file" id="fileInput" hidden>
+        <button type="button" class="attach-btn" id="attachButton" title="画像・ファイルを添付">＋</button>
         <input id="messageInput" maxlength="2000" placeholder="# general にメッセージを送信" autocomplete="off">
-        <button>送信</button>
+        <button type="submit">送信</button>
       </form>
+      <div id="fileStatus" class="attachment-meta"></div>
     </div>
   </main>
 
@@ -164,10 +180,21 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 
 <div id="profilePanel" class="profile-panel hidden">
   <h3>プロフィール</h3>
+  <div class="profile-avatar-preview" id="profileAvatar">?</div>
   <div class="row"><div class="label">表示名</div><div class="value" id="profileName"></div></div>
   <div class="row"><div class="label">ユーザー名</div><div class="value" id="profileUsername"></div></div>
   <div class="row"><div class="label">自己紹介</div><div class="value" id="profileBio"></div></div>
-  <button id="logoutButton" class="logout">ログアウト</button>
+
+  <div class="profile-edit">
+    <label for="editDisplayName">表示名</label>
+    <input id="editDisplayName" maxlength="24">
+    <label for="editBio">自己紹介</label>
+    <textarea id="editBio" maxlength="500"></textarea>
+    <label for="avatarInput">アイコン</label>
+    <input id="avatarInput" type="file" accept="image/*">
+    <button id="saveProfileButton">プロフィールを保存</button>
+    <button id="logoutButton" class="logout">ログアウト</button>
+  </div>
 </div>
 
 <script>
@@ -200,13 +227,34 @@ function showRegister() {
   $("regDisplayName").focus();
 }
 
+function setAvatarElement(el, url, fallbackName) {
+  el.innerHTML = "";
+  if (url) {
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = "";
+    img.style.width = "100%";
+    img.style.height = "100%";
+    img.style.objectFit = "cover";
+    img.style.borderRadius = "50%";
+    el.appendChild(img);
+  } else {
+    el.textContent = (fallbackName || "?").slice(0,1).toUpperCase();
+  }
+}
+
 function setAccount(data) {
   account = data;
-  $("myName").textContent = account.display_name || account.displayName;
-  $("myAvatar").textContent = (account.display_name || account.displayName || "?").slice(0,1).toUpperCase();
-  $("profileName").textContent = account.display_name || account.displayName || "";
+  const displayName = account.display_name || account.displayName || "";
+  const avatarUrl = account.avatar_url || account.avatarUrl || null;
+  $("myName").textContent = displayName;
+  setAvatarElement($("myAvatar"), avatarUrl, displayName);
+  setAvatarElement($("profileAvatar"), avatarUrl, displayName);
+  $("profileName").textContent = displayName;
   $("profileUsername").textContent = "@" + account.username;
   $("profileBio").textContent = account.bio || "自己紹介はまだありません";
+  $("editDisplayName").value = displayName;
+  $("editBio").value = account.bio || "";
 }
 
 async function api(url, options = {}) {
@@ -347,7 +395,7 @@ function appendMessage(m) {
   wrap.className = "message";
   const avatar = document.createElement("div");
   avatar.className = "avatar";
-  avatar.textContent = (m.user || "?").slice(0,1).toUpperCase();
+  setAvatarElement(avatar, m.avatarUrl, m.user);
 
   const body = document.createElement("div");
   body.className = "msgbody";
@@ -360,14 +408,50 @@ function appendMessage(m) {
   time.textContent = new Date(m.time).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
   head.append(name,time);
 
-  const text = document.createElement("div");
-  text.className = "text";
-  text.textContent = m.text;
+  if (m.text) {
+    const text = document.createElement("div");
+    text.className = "text";
+    text.textContent = m.text;
+    body.appendChild(text);
+  }
 
-  body.append(head,text);
+  if (m.attachment?.url) {
+    const attachment = document.createElement("div");
+    attachment.className = "attachment";
+
+    if (String(m.attachment.type || "").startsWith("image/")) {
+      const img = document.createElement("img");
+      img.src = m.attachment.url;
+      img.alt = m.attachment.name || "image";
+      img.loading = "lazy";
+      attachment.appendChild(img);
+    }
+
+    const link = document.createElement("a");
+    link.href = m.attachment.url;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.textContent = "📎 " + (m.attachment.name || "ファイル");
+    attachment.appendChild(link);
+
+    const meta = document.createElement("div");
+    meta.className = "attachment-meta";
+    meta.textContent = formatBytes(m.attachment.size);
+    attachment.appendChild(meta);
+    body.appendChild(attachment);
+  }
+
+  body.prepend(head);
   wrap.append(avatar,body);
   messages.appendChild(wrap);
   messages.scrollTop = messages.scrollHeight;
+}
+
+function formatBytes(size) {
+  const n = Number(size) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024*1024) return `${(n/1024).toFixed(1)} KB`;
+  return `${(n/1024/1024).toFixed(1)} MB`;
 }
 
 function appendSystem(text) {
@@ -391,10 +475,15 @@ function renderUsers(users) {
     row.className = "member";
     const dot = document.createElement("span");
     dot.className = "dot";
+    const avatar = document.createElement("div");
+    avatar.className = "avatar";
+    avatar.style.width = "28px";
+    avatar.style.height = "28px";
+    setAvatarElement(avatar, u.avatarUrl, u.name || u.username);
     const name = document.createElement("span");
     name.className = "membername";
     name.textContent = (u.name || u.username) + (u.id === myId ? " (あなた)" : "");
-    row.append(dot,name);
+    row.append(dot,avatar,name);
     $("memberList").appendChild(row);
   });
 }
@@ -411,12 +500,94 @@ document.querySelectorAll(".eye").forEach(btn => {
   });
 });
 
-$("messageForm").addEventListener("submit", e => {
+
+$("saveProfileButton").addEventListener("click", async () => {
+  const button = $("saveProfileButton");
+  button.disabled = true;
+  button.textContent = "保存中…";
+
+  try {
+    let data = await api("/api/profile", {
+      method: "PATCH",
+      body: JSON.stringify({
+        displayName: $("editDisplayName").value.trim(),
+        bio: $("editBio").value.trim()
+      })
+    });
+    setAccount(data.account);
+
+    const avatarFile = $("avatarInput").files[0];
+    if (avatarFile) {
+      const form = new FormData();
+      form.append("file", avatarFile);
+      const response = await fetch("/api/profile/avatar", {
+        method: "POST",
+        credentials: "same-origin",
+        body: form
+      });
+      const avatarData = await response.json();
+      if (!response.ok) throw new Error(avatarData.error || "アイコンの更新に失敗しました");
+      setAccount(avatarData.account);
+      $("avatarInput").value = "";
+    }
+
+    $("profilePanel").classList.add("hidden");
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = "プロフィールを保存";
+  }
+});
+
+$("attachButton").addEventListener("click", () => $("fileInput").click());
+
+$("fileInput").addEventListener("change", () => {
+  const file = $("fileInput").files[0];
+  $("fileStatus").textContent = file
+    ? `添付: ${file.name} (${formatBytes(file.size)})`
+    : "";
+});
+
+async function uploadChatFile(file) {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch("/api/upload", {
+    method: "POST",
+    credentials: "same-origin",
+    body: form
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "アップロードに失敗しました");
+  return data.file;
+}
+
+$("messageForm").addEventListener("submit", async e => {
   e.preventDefault();
   const text = $("messageInput").value.trim();
-  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({type:"message", text}));
-  $("messageInput").value = "";
+  const file = $("fileInput").files[0];
+
+  if ((!text && !file) || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+  const sendButton = $("messageForm").querySelector("button[type=submit]");
+  sendButton.disabled = true;
+
+  try {
+    let attachment = null;
+    if (file) {
+      $("fileStatus").textContent = `アップロード中: ${file.name}`;
+      attachment = await uploadChatFile(file);
+    }
+
+    ws.send(JSON.stringify({type:"message", text, attachment}));
+    $("messageInput").value = "";
+    $("fileInput").value = "";
+    $("fileStatus").textContent = "";
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    sendButton.disabled = false;
+  }
 });
 
 document.querySelectorAll(".channel").forEach(el => {

@@ -5,6 +5,7 @@ const crypto = require("crypto");
 const bcrypt = require("bcryptjs");
 const { WebSocketServer } = require("ws");
 const { createClient } = require("@supabase/supabase-js");
+const multer = require("multer");
 
 const app = express();
 const server = http.createServer(app);
@@ -31,6 +32,18 @@ const channels = {
 const clients = new Map();
 const MAX_MESSAGES = 200;
 const SESSION_DAYS = 30;
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+const STORAGE_BUCKET = "yamato-chat-files";
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_UPLOAD_BYTES }
+});
+const avatarUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_AVATAR_BYTES }
+});
 
 app.use(express.json({ limit: "32kb" }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -310,6 +323,125 @@ app.patch("/api/profile", requireAccount, async (req, res) => {
   }
 });
 
+function safeFileName(name) {
+  const cleaned = String(name || "file")
+    .replace(/[\\\\/<>:"|?*\\x00-\\x1F]/g, "_")
+    .replace(/\\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+  return cleaned || "file";
+}
+
+function makeStoragePath(accountId, originalName, prefix) {
+  const ext = path.extname(originalName).slice(0, 16);
+  const base = path.basename(originalName, ext)
+    .replace(/[^A-Za-z0-9_-]/g, "_")
+    .slice(0, 60) || "file";
+  return `${prefix}/${accountId}/${Date.now()}-${crypto.randomBytes(6).toString("hex")}-${base}${ext}`;
+}
+
+function publicStorageUrl(storagePath) {
+  const encoded = storagePath.split("/").map(encodeURIComponent).join("/");
+  return `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encoded}`;
+}
+
+async function ensureStorageBucket() {
+  const { data, error } = await supabase.storage.listBuckets();
+  if (error) throw error;
+
+  if (!(data || []).some(bucket => bucket.name === STORAGE_BUCKET)) {
+    const { error: createError } = await supabase.storage.createBucket(STORAGE_BUCKET, {
+      public: true,
+      fileSizeLimit: `${MAX_UPLOAD_BYTES}B`
+    });
+
+    if (createError && !String(createError.message || "").toLowerCase().includes("already")) {
+      throw createError;
+    }
+  }
+}
+
+app.post("/api/profile/avatar", requireAccount, avatarUpload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ ok: false, error: "画像を選択してください" });
+    }
+    if (!String(req.file.mimetype || "").startsWith("image/")) {
+      return res.status(400).json({ ok: false, error: "アイコンには画像ファイルを選択してください" });
+    }
+
+    const storagePath = makeStoragePath(req.account.id, safeFileName(req.file.originalname), "avatars");
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(storagePath, req.file.buffer, {
+        contentType: req.file.mimetype,
+        upsert: false
+      });
+
+    if (uploadError) throw uploadError;
+
+    const avatarUrl = publicStorageUrl(storagePath);
+
+    const { data, error } = await supabase
+      .from("accounts")
+      .update({ avatar_url: avatarUrl })
+      .eq("id", req.account.id)
+      .select("id, username, display_name, bio, avatar_url, created_at, last_login_at")
+      .single();
+
+    if (error) throw error;
+
+    await supabase
+      .from("chat_users")
+      .update({ avatar_url: avatarUrl })
+      .eq("username", req.account.username);
+
+    res.json({ ok: true, account: data });
+  } catch (error) {
+    console.error("Avatar upload error:", error);
+    res.status(500).json({ ok: false, error: "アイコンのアップロードに失敗しました" });
+  }
+});
+
+app.post("/api/upload", requireAccount, upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ ok: false, error: "ファイルを選択してください" });
+    }
+
+    const storagePath = makeStoragePath(
+      req.account.id,
+      safeFileName(req.file.originalname),
+      "uploads"
+    );
+
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(storagePath, req.file.buffer, {
+        contentType: req.file.mimetype || "application/octet-stream",
+        upsert: false
+      });
+
+    if (uploadError) throw uploadError;
+
+    res.json({
+      ok: true,
+      file: {
+        url: publicStorageUrl(storagePath),
+        name: safeFileName(req.file.originalname),
+        type: req.file.mimetype || "application/octet-stream",
+        size: req.file.size
+      }
+    });
+  } catch (error) {
+    console.error("File upload error:", error);
+    if (error?.code === "LIMIT_FILE_SIZE") {
+      return res.status(413).json({ ok: false, error: "ファイルは20MB以下にしてください" });
+    }
+    res.status(500).json({ ok: false, error: "ファイルのアップロードに失敗しました" });
+  }
+});
+
 function broadcast(data) {
   const text = JSON.stringify(data);
   for (const ws of clients.keys()) {
@@ -324,6 +456,7 @@ function sendUserList() {
       id: u.id,
       username: u.username,
       name: u.name,
+      avatarUrl: u.avatarUrl || null,
       channel: u.channel
     }))
   });
@@ -397,7 +530,11 @@ async function getHistory(channelKey) {
       content,
       created_at,
       user_id,
-      chat_users(username)
+      attachment_url,
+      attachment_name,
+      attachment_type,
+      attachment_size,
+      chat_users(username, avatar_url)
     `)
     .eq("channel_id", channelId)
     .order("created_at", { ascending: false })
@@ -412,8 +549,15 @@ async function getHistory(channelKey) {
     id: row.id,
     userId: row.user_id,
     user: row.chat_users?.username || "Unknown",
+    avatarUrl: row.chat_users?.avatar_url || null,
     text: row.content,
-    time: row.created_at
+    time: row.created_at,
+    attachment: row.attachment_url ? {
+      url: row.attachment_url,
+      name: row.attachment_name || "file",
+      type: row.attachment_type || "application/octet-stream",
+      size: row.attachment_size || 0
+    } : null
   }));
 }
 
@@ -423,10 +567,10 @@ async function ensureChatUser(account) {
   const { data, error } = await supabase
     .from("chat_users")
     .upsert(
-      { username: account.username },
+      { username: account.username, avatar_url: account.avatar_url || null },
       { onConflict: "username" }
     )
-    .select("id, username")
+    .select("id, username, avatar_url")
     .single();
 
   if (error) throw error;
@@ -467,6 +611,7 @@ wss.on("connection", async (ws, req) => {
     accountId: account.id,
     username: account.username,
     name: account.display_name,
+    avatarUrl: account.avatar_url || null,
     channel: "general"
   };
 
@@ -528,17 +673,29 @@ wss.on("connection", async (ws, req) => {
       const text = String(data.text || "").trim().slice(0, 2000);
       const channel = user.channel;
       const channelId = channels[channel]?.id;
+      const attachment = data.attachment && typeof data.attachment === "object"
+        ? data.attachment
+        : null;
 
-      if (!text || !channelId) return;
+      if ((!text && !attachment) || !channelId) return;
+
+      const insertRow = {
+        channel_id: channelId,
+        user_id: user.dbUserId,
+        content: text
+      };
+
+      if (attachment?.url) {
+        insertRow.attachment_url = String(attachment.url).slice(0, 2000);
+        insertRow.attachment_name = safeFileName(attachment.name).slice(0, 120);
+        insertRow.attachment_type = String(attachment.type || "application/octet-stream").slice(0, 150);
+        insertRow.attachment_size = Math.max(0, Number(attachment.size) || 0);
+      }
 
       const { data: saved, error } = await supabase
         .from("messages")
-        .insert({
-          channel_id: channelId,
-          user_id: user.dbUserId,
-          content: text
-        })
-        .select("id, content, created_at, user_id")
+        .insert(insertRow)
+        .select("id, content, created_at, user_id, attachment_url, attachment_name, attachment_type, attachment_size")
         .single();
 
       if (error) {
@@ -551,8 +708,15 @@ wss.on("connection", async (ws, req) => {
         userId: saved.user_id,
         username: user.username,
         user: user.name,
+        avatarUrl: user.avatarUrl || null,
         text: saved.content,
-        time: saved.created_at
+        time: saved.created_at,
+        attachment: saved.attachment_url ? {
+          url: saved.attachment_url,
+          name: saved.attachment_name || "file",
+          type: saved.attachment_type || "application/octet-stream",
+          size: saved.attachment_size || 0
+        } : null
       };
 
       for (const [client, info] of clients) {
@@ -580,7 +744,7 @@ app.get(/.*/, (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-ensureDefaultData()
+Promise.all([ensureDefaultData(), ensureStorageBucket()])
   .then(() => {
     server.listen(PORT, () => {
       console.log(`Yamato Chat running on port ${PORT}`);
