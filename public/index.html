@@ -230,7 +230,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
     <div class="social">
       <div class="social-head"><span>SOCIAL</span></div>
       <button class="social-btn" id="friendsButton">👥 フレンド</button>
-      <div id="dmList"></div>
+      <div class="dm-title">DM</div><div id="dmList"></div>
     </div>
     <div class="me" id="profileButton">
       <div class="avatar" id="myAvatar">?</div>
@@ -354,8 +354,11 @@ async function api(url, options = {}) {
   };
   if (tabToken) headers.Authorization = `Bearer ${tabToken}`;
 
-  const response = await fetch(url, {
-    credentials: "same-origin",
+  const target = /^https?:\/\//i.test(url)
+    ? url
+    : `${YAMATO_CHAT_BACKEND.replace(/\/$/, "")}${url}`;
+
+  const response = await fetch(target, {
     ...options,
     headers
   });
@@ -395,6 +398,8 @@ async function login(e) {
     setAuthVisible(false);
     $("loginForm").reset();
     connect();
+    await loadFriends();
+    await loadDmList();
     $("messageInput").focus();
   } catch (err) {
     $("loginError").textContent = err.message;
@@ -421,6 +426,8 @@ async function register(e) {
     setAuthVisible(false);
     $("registerForm").reset();
     connect();
+    await loadFriends();
+    await loadDmList();
     $("messageInput").focus();
   } catch (err) {
     $("registerError").textContent = err.message;
@@ -554,14 +561,15 @@ function connect() {
   if (!account) return;
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
-  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  const backend = new URL(YAMATO_CHAT_BACKEND);
+  const protocol = backend.protocol === "https:" ? "wss:" : "ws:";
   const tabToken = sessionStorage.getItem("yamato_session_token") || "";
   if (!tabToken) {
     setAuthVisible(true);
     showLogin();
     return;
   }
-  ws = new WebSocket(`${protocol}//${location.host}?session=${encodeURIComponent(tabToken)}`);
+  ws = new WebSocket(`${protocol}//${backend.host}?session=${encodeURIComponent(tabToken)}`);
 
   ws.onopen = () => {
     $("messages").dataset.connected = "1";
@@ -1207,10 +1215,6 @@ $("logoutButton").addEventListener("click", async () => {
 });
 
 checkSession();
-if (account) {
-  loadFriends();
-  loadDmList();
-}
 </script>
 </body>
 </html>
