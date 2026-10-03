@@ -565,9 +565,7 @@ async function getHistory(channelKey) {
   const channelId = channels[channelKey]?.id;
   if (!channelId) return [];
 
-  const { data, error } = await supabase
-    .from("messages")
-    .select(`
+  const selectWithAttachments = `
       id,
       content,
       created_at,
@@ -579,10 +577,40 @@ async function getHistory(channelKey) {
       attachment_size,
       attachments,
       chat_users(username, display_name, avatar_url)
-    `)
+    `;
+
+  const selectLegacy = `
+      id,
+      content,
+      created_at,
+      edited_at,
+      user_id,
+      attachment_url,
+      attachment_name,
+      attachment_type,
+      attachment_size,
+      chat_users(username, display_name, avatar_url)
+    `;
+
+  let { data, error } = await supabase
+    .from("messages")
+    .select(selectWithAttachments)
     .eq("channel_id", channelId)
     .order("created_at", { ascending: false })
     .limit(MAX_MESSAGES);
+
+  // V2.4.5 can be deployed before the optional migration is run.
+  // In that case, fall back to the existing single-attachment schema so
+  // the entire chat history does not disappear.
+  if (error && /attachments|column/i.test(String(error.message || ""))) {
+    console.warn("attachments column is not ready; using legacy message history.");
+    ({ data, error } = await supabase
+      .from("messages")
+      .select(selectLegacy)
+      .eq("channel_id", channelId)
+      .order("created_at", { ascending: false })
+      .limit(MAX_MESSAGES));
+  }
 
   if (error) {
     console.error("History load error:", error);
@@ -757,11 +785,36 @@ wss.on("connection", async (ws, req) => {
         insertRow.attachment_size = attachments[0].size;
       }
 
-      const { data: saved, error } = await supabase
+      let { data: saved, error } = await supabase
         .from("messages")
         .insert(insertRow)
         .select("id, content, created_at, edited_at, user_id, attachment_url, attachment_name, attachment_type, attachment_size, attachments")
         .single();
+
+      if (error && /attachments|column/i.test(String(error.message || ""))) {
+        // Migration not applied yet: save text and the first attachment using
+        // the schema that existed before V2.4.5.
+        const legacyRow = {
+          channel_id: channelId,
+          user_id: user.dbUserId,
+          content: text
+        };
+        if (attachments[0]) {
+          legacyRow.attachment_url = attachments[0].url;
+          legacyRow.attachment_name = attachments[0].name;
+          legacyRow.attachment_type = attachments[0].type;
+          legacyRow.attachment_size = attachments[0].size;
+        }
+        ({ data: saved, error } = await supabase
+          .from("messages")
+          .insert(legacyRow)
+          .select("id, content, created_at, edited_at, user_id, attachment_url, attachment_name, attachment_type, attachment_size")
+          .single());
+
+        if (!error && attachments.length > 1) {
+          console.warn("attachments migration is missing; only the first attachment was saved.");
+        }
+      }
 
       if (error) {
         console.error("Message save error:", error);
