@@ -36,9 +36,11 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .text{margin-top:3px;white-space:pre-wrap;word-break:break-word;color:#e1e5ed}
 .system{color:var(--muted);font-size:13px;text-align:center;margin:10px}
 .composer{padding:12px 18px 18px}
-.composer form{display:flex;background:var(--panel2);border:1px solid var(--line);border-radius:9px;overflow:hidden}
-.composer input{flex:1;background:transparent;border:0;outline:0;color:white;padding:14px;font-size:14px}
+.composer form{display:flex;align-items:stretch;height:44px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.composer input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:white;padding:0 14px;font-size:14px}
 .composer button{border:0;background:var(--accent);color:white;padding:0 18px;font-weight:700;cursor:pointer}
+.composer .attach-btn{flex:0 0 44px;width:44px;height:44px;padding:0;background:var(--accent);border-radius:0;display:grid;place-items:center;font-size:25px;line-height:1}
+.composer .send-btn{flex:0 0 64px}
 .members{border-left:1px solid var(--line);padding:16px;overflow:auto}
 .members h3{font-size:12px;color:var(--muted);margin:4px 0 12px}
 .member{display:flex;align-items:center;gap:9px;padding:7px 0}
@@ -76,12 +78,23 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .profile-edit .secondary{background:var(--hover)}
 .file-row{display:flex;gap:8px;align-items:center}
 .attach-btn{width:42px;border:0;border-radius:7px;background:var(--hover);color:white;cursor:pointer;font-size:20px}
-.attachment{margin-top:8px}
-.attachment img{display:block;max-width:min(420px,70vw);max-height:320px;border-radius:8px;object-fit:contain}
-.attachment a{display:inline-block;color:#6ea8ff;text-decoration:none;background:var(--panel2);padding:8px 10px;border-radius:7px}
-.attachment-meta{font-size:11px;color:var(--muted);margin-top:4px}
+.attachment{margin-top:8px;width:min(460px,calc(100vw - 90px));max-width:100%;background:#1f222b;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.attachment-image{display:block;width:auto;max-width:100%;max-height:300px;height:auto;object-fit:contain;background:#11131a}
+.attachment-actions{display:flex;align-items:center;gap:10px;padding:7px 9px}
+.attachment-name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+.attachment-action,.attachment-download{border:0;background:var(--hover);color:#dbe5ff;text-decoration:none;border-radius:6px;padding:6px 9px;cursor:pointer;white-space:nowrap}
+.attachment-file{display:flex;align-items:center;gap:10px;padding:10px}
+.attachment-file-icon{width:42px;height:42px;border-radius:7px;background:#2a2e39;display:grid;place-items:center;font-size:21px;flex:0 0 auto}
+.attachment-file-info{min-width:0;flex:1}
+.attachment-file-info .attachment-name{font-weight:600}
+.attachment-meta{font-size:11px;color:var(--muted);margin-top:3px}
+.pending-attachment{display:none;align-items:center;gap:9px;margin:0 0 8px;padding:8px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px}
+.pending-attachment.show{display:flex}
+.pending-attachment .pending-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pending-attachment button{width:28px;height:28px;padding:0;background:var(--hover);border:0;border-radius:6px;color:white;cursor:pointer}
+
 @media(max-width:800px){.app{grid-template-columns:170px 1fr}.members{display:none}}
-@media(max-width:560px){.app{grid-template-columns:1fr}.sidebar{display:none}.messages{padding:14px}}
+@media(max-width:560px){.app{grid-template-columns:1fr}.sidebar{display:none}.messages{padding:14px}.attachment{width:100%}.attachment-image{max-height:260px}}
 </style>
 </head>
 <body>
@@ -162,11 +175,16 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
     <div class="header"># <span id="channelName">general</span><small>リアルタイムチャット</small></div>
     <div id="messages" class="messages"></div>
     <div class="composer">
+      <div id="pendingAttachment" class="pending-attachment">
+        <span>📎</span>
+        <span id="pendingAttachmentName" class="pending-name"></span>
+        <button type="button" id="clearAttachment" title="添付を取り消す">×</button>
+      </div>
       <form id="messageForm">
         <input type="file" id="fileInput" hidden>
         <button type="button" class="attach-btn" id="attachButton" title="画像・ファイルを添付">＋</button>
         <input id="messageInput" maxlength="2000" placeholder="# general にメッセージを送信" autocomplete="off">
-        <button type="submit">送信</button>
+        <button type="submit" class="send-btn">送信</button>
       </form>
       <div id="fileStatus" class="attachment-meta"></div>
     </div>
@@ -414,6 +432,25 @@ function updateVisibleAvatars(url) {
   });
 }
 
+async function downloadAttachment(url, name) {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("download failed");
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = name || "download";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+  } catch {
+    // Fallback: open the file only if the browser blocks the download fetch.
+    window.open(url, "_blank", "noopener");
+  }
+}
+
 function appendMessage(m) {
   const wrap = document.createElement("div");
   wrap.className = "message";
@@ -443,25 +480,72 @@ function appendMessage(m) {
     const attachment = document.createElement("div");
     attachment.className = "attachment";
 
-    if (String(m.attachment.type || "").startsWith("image/")) {
+    const type = String(m.attachment.type || "application/octet-stream");
+    const name = m.attachment.name || "ファイル";
+    const isImage = type.startsWith("image/");
+
+    if (isImage) {
       const img = document.createElement("img");
       img.src = m.attachment.url;
-      img.alt = m.attachment.name || "image";
+      img.alt = name;
       img.loading = "lazy";
+      img.className = "attachment-image";
       attachment.appendChild(img);
+
+      const actions = document.createElement("div");
+      actions.className = "attachment-actions";
+      const info = document.createElement("div");
+      info.style.minWidth = "0";
+      info.style.flex = "1";
+
+      const label = document.createElement("div");
+      label.className = "attachment-name";
+      label.textContent = name;
+
+      const size = document.createElement("div");
+      size.className = "attachment-meta";
+      size.textContent = formatBytes(m.attachment.size);
+
+      info.append(label, size);
+
+      const view = document.createElement("a");
+      view.className = "attachment-action";
+      view.href = m.attachment.url;
+      view.target = "_blank";
+      view.rel = "noopener";
+      view.textContent = "表示";
+
+      actions.append(info, view);
+      attachment.appendChild(actions);
+    } else {
+      const row = document.createElement("div");
+      row.className = "attachment-file";
+
+      const icon = document.createElement("div");
+      icon.className = "attachment-file-icon";
+      icon.textContent = "📄";
+
+      const info = document.createElement("div");
+      info.className = "attachment-file-info";
+      const label = document.createElement("div");
+      label.className = "attachment-name";
+      label.textContent = name;
+      const meta = document.createElement("div");
+      meta.className = "attachment-meta";
+      meta.textContent = formatBytes(m.attachment.size);
+      info.append(label, meta);
+
+      const download = document.createElement("button");
+      download.type = "button";
+      download.className = "attachment-download";
+      download.textContent = "↓";
+      download.title = "ダウンロード";
+      download.addEventListener("click", () => downloadAttachment(m.attachment.url, name));
+
+      row.append(icon, info, download);
+      attachment.appendChild(row);
     }
 
-    const link = document.createElement("a");
-    link.href = m.attachment.url;
-    link.target = "_blank";
-    link.rel = "noopener";
-    link.textContent = "📎 " + (m.attachment.name || "ファイル");
-    attachment.appendChild(link);
-
-    const meta = document.createElement("div");
-    meta.className = "attachment-meta";
-    meta.textContent = formatBytes(m.attachment.size);
-    attachment.appendChild(meta);
     body.appendChild(attachment);
   }
 
@@ -576,7 +660,7 @@ $("fileInput").addEventListener("change", () => {
 
 async function uploadChatFile(file) {
   const form = new FormData();
-  form.append("file", file);
+  form.append("file", file, file.name || "pasted-file");
   const response = await fetch("/api/upload", {
     method: "POST",
     credentials: "same-origin",
@@ -587,27 +671,82 @@ async function uploadChatFile(file) {
   return data.file;
 }
 
+let pendingFile = null;
+
+function setPendingFile(file) {
+  pendingFile = file || null;
+  const box = $("pendingAttachment");
+  const name = $("pendingAttachmentName");
+  if (pendingFile) {
+    name.textContent = `${pendingFile.name || "貼り付けファイル"} (${formatBytes(pendingFile.size)})`;
+    box.classList.add("show");
+  } else {
+    name.textContent = "";
+    box.classList.remove("show");
+    $("fileInput").value = "";
+  }
+}
+
+$("attachButton").addEventListener("click", () => $("fileInput").click());
+
+$("fileInput").addEventListener("change", () => {
+  const file = $("fileInput").files[0] || null;
+  setPendingFile(file);
+});
+
+$("clearAttachment").addEventListener("click", () => setPendingFile(null));
+
+// Ctrl+V / right-click paste: if the clipboard contains an image/file,
+// turn it into the same pending attachment used by the + button.
+$("messageInput").addEventListener("paste", e => {
+  const items = Array.from(e.clipboardData?.items || []);
+  const fileItem = items.find(item => item.kind === "file");
+  if (!fileItem) return;
+
+  const file = fileItem.getAsFile();
+  if (!file) return;
+
+  e.preventDefault();
+  const ext = file.type === "image/png" ? ".png"
+    : file.type === "image/jpeg" ? ".jpg"
+    : file.type === "image/gif" ? ".gif"
+    : file.type === "image/webp" ? ".webp" : "";
+  const namedFile = new File([file], file.name || `pasted-image${ext}`, {
+    type: file.type || "application/octet-stream",
+    lastModified: Date.now()
+  });
+  setPendingFile(namedFile);
+});
+
+// Some browsers expose pasted files on the clipboard as DataTransfer files.
+$("messageInput").addEventListener("drop", e => {
+  const file = e.dataTransfer?.files?.[0];
+  if (!file) return;
+  e.preventDefault();
+  setPendingFile(file);
+});
+
 $("messageForm").addEventListener("submit", async e => {
   e.preventDefault();
   const text = $("messageInput").value.trim();
-  const file = $("fileInput").files[0];
+  const file = pendingFile;
 
   if ((!text && !file) || !ws || ws.readyState !== WebSocket.OPEN) return;
 
-  const sendButton = $("messageForm").querySelector("button[type=submit]");
+  const sendButton = $("messageForm").querySelector(".send-btn");
   sendButton.disabled = true;
 
   try {
     let attachment = null;
     if (file) {
-      $("fileStatus").textContent = `アップロード中: ${file.name}`;
+      $("fileStatus").textContent = `アップロード中: ${file.name || "貼り付けファイル"}`;
       attachment = await uploadChatFile(file);
     }
 
     ws.send(JSON.stringify({type:"message", text, attachment}));
     $("messageInput").value = "";
-    $("fileInput").value = "";
     $("fileStatus").textContent = "";
+    setPendingFile(null);
   } catch (err) {
     alert(err.message);
   } finally {
