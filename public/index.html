@@ -111,6 +111,14 @@ let myName = "";
 let currentChannel = "general";
 
 const $ = id => document.getElementById(id);
+
+const savedName = localStorage.getItem("yamatoChatName");
+if (savedName) {
+  myName = savedName.slice(0,24);
+  $("myName").textContent = myName;
+  $("myAvatar").textContent = myName.slice(0,1);
+  $("login").classList.add("hidden");
+}
 const messages = $("messages");
 
 function connect() {
@@ -221,6 +229,7 @@ $("nameForm").addEventListener("submit", e => {
   const value = $("nameInput").value.trim().slice(0,24);
   if (!value) return;
   myName = value;
+  localStorage.setItem("yamatoChatName", myName);
   $("myName").textContent = myName;
   $("myAvatar").textContent = myName.slice(0,1);
   $("login").classList.add("hidden");
@@ -232,9 +241,11 @@ $("messageForm").addEventListener("submit", e => {
   e.preventDefault();
   const text = $("messageInput").value.trim();
   if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({type:"message", text}));
+  ws.send(JSON.stringify({type:"message", text, name: myName}));
   $("messageInput").value = "";
 });
+
+if (myName) connect();
 
 document.querySelectorAll(".channel").forEach(el => {
   el.addEventListener("click", () => {

@@ -240,7 +240,26 @@ wss.on("connection", async (ws) => {
       const channel = user.channel;
       const channelId = channels[channel]?.id;
 
-      if (!text || !channelId || !user.dbUserId) return;
+      if (!text || !channelId) return;
+
+      // The client also sends its current display name with each message.
+      // This prevents a race where the first message arrives before set_name
+      // has finished saving the user in Supabase.
+      const requestedName = String(data.name || user.name || "Guest")
+        .trim()
+        .slice(0, 24) || "Guest";
+
+      try {
+        if (requestedName !== user.name || !user.dbUserId) {
+          const dbUser = await ensureUser(requestedName);
+          user.dbUserId = dbUser.id;
+          user.name = dbUser.username;
+          sendUserList();
+        }
+      } catch (error) {
+        console.error("User sync error:", error);
+        return;
+      }
 
       const { data: saved, error } = await supabase
         .from("messages")
