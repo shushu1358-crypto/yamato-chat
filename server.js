@@ -565,58 +565,95 @@ async function getHistory(channelKey, reactionUserId = null) {
   const channelId = channels[channelKey]?.id;
   if (!channelId) return [];
 
-  const selectWithAttachments = `
-      id, content, created_at, edited_at, user_id,
-      attachment_url, attachment_name, attachment_type, attachment_size,
-      attachments, chat_users(username, display_name, avatar_url)
-    `;
-  const selectLegacy = `
-      id, content, created_at, edited_at, user_id,
-      attachment_url, attachment_name, attachment_type, attachment_size,
-      chat_users(username, display_name, avatar_url)
-    `;
+  const baseSelect = `
+    id, content, created_at, edited_at, user_id,
+    attachment_url, attachment_name, attachment_type, attachment_size
+  `;
 
-  let { data, error } = await supabase
-    .from("messages").select(selectWithAttachments)
-    .eq("channel_id", channelId).order("created_at",{ascending:false}).limit(MAX_MESSAGES);
+  let { data: rows, error } = await supabase
+    .from("messages")
+    .select(`${baseSelect}, attachments`)
+    .eq("channel_id", channelId)
+    .order("created_at", { ascending: false })
+    .limit(MAX_MESSAGES);
 
-  if (error && /attachments|column/i.test(String(error.message||""))) {
-    ({data,error}=await supabase.from("messages").select(selectLegacy)
-      .eq("channel_id",channelId).order("created_at",{ascending:false}).limit(MAX_MESSAGES));
+  if (error && /attachments|column/i.test(String(error.message || ""))) {
+    ({ data: rows, error } = await supabase
+      .from("messages")
+      .select(baseSelect)
+      .eq("channel_id", channelId)
+      .order("created_at", { ascending: false })
+      .limit(MAX_MESSAGES));
   }
-  if(error){ console.error("History load error:",error); return []; }
 
-  const rows=(data||[]).reverse();
-  const ids=rows.map(r=>r.id);
-  const {data: reactionRows}=ids.length
-    ? await supabase.from("reactions").select("message_id,user_id,emoji").in("message_id",ids)
-    : {data:[]};
-  const myChatUserId = reactionUserId;
-  const reactionMap={};
-  for(const r of reactionRows||[]){
-    if(!reactionMap[r.message_id]) reactionMap[r.message_id]=[];
-    let item=reactionMap[r.message_id].find(x=>x.emoji===r.emoji);
-    if(!item){item={emoji:r.emoji,count:0,mine:false};reactionMap[r.message_id].push(item);}
+  if (error) {
+    console.error("History load error:", error);
+    return [];
+  }
+
+  rows = (rows || []).reverse();
+
+  const userIds = [...new Set(rows.map(r => r.user_id).filter(Boolean))];
+  let userRows = [];
+  if (userIds.length) {
+    const result = await supabase
+      .from("chat_users")
+      .select("id,username,display_name,avatar_url")
+      .in("id", userIds);
+    if (!result.error) userRows = result.data || [];
+    else console.error("Chat user history load error:", result.error);
+  }
+  const usersById = Object.fromEntries(userRows.map(u => [u.id, u]));
+
+  const ids = rows.map(r => r.id);
+  const reactionRows = ids.length
+    ? await supabase.from("reactions").select("message_id,user_id,emoji").in("message_id", ids)
+    : { data: [], error: null };
+
+  if (reactionRows.error) {
+    console.error("Reaction history load error:", reactionRows.error);
+  }
+
+  const reactionMap = {};
+  for (const r of reactionRows.data || []) {
+    if (!reactionMap[r.message_id]) reactionMap[r.message_id] = [];
+    let item = reactionMap[r.message_id].find(x => x.emoji === r.emoji);
+    if (!item) {
+      item = { emoji: r.emoji, count: 0, mine: false };
+      reactionMap[r.message_id].push(item);
+    }
     item.count++;
-    if(r.user_id===myChatUserId)item.mine=true;
+    if (r.user_id === reactionUserId) item.mine = true;
   }
 
-  return rows.map(row=>({
-    id:row.id,userId:row.user_id,
-    user:row.chat_users?.display_name||row.chat_users?.username||"Unknown",
-    username:row.chat_users?.username||"",
-    avatarUrl:row.chat_users?.avatar_url||null,
-    text:row.content,time:row.created_at,editedAt:row.edited_at||null,
-    attachments:Array.isArray(row.attachments)?row.attachments:(row.attachment_url?[{
-      url:row.attachment_url,name:row.attachment_name||"file",
-      type:row.attachment_type||"application/octet-stream",size:row.attachment_size||0
-    }]:[]),
-    attachment:row.attachment_url?{
-      url:row.attachment_url,name:row.attachment_name||"file",
-      type:row.attachment_type||"application/octet-stream",size:row.attachment_size||0
-    }:null,
-    reactions:reactionMap[row.id]||[]
-  }));
+  return rows.map(row => {
+    const u = usersById[row.user_id] || {};
+    return {
+      id: row.id,
+      userId: row.user_id,
+      user: u.display_name || u.username || "Unknown",
+      username: u.username || "",
+      avatarUrl: u.avatar_url || null,
+      text: row.content,
+      time: row.created_at,
+      editedAt: row.edited_at || null,
+      attachments: Array.isArray(row.attachments) ? row.attachments : (
+        row.attachment_url ? [{
+          url: row.attachment_url,
+          name: row.attachment_name || "file",
+          type: row.attachment_type || "application/octet-stream",
+          size: row.attachment_size || 0
+        }] : []
+      ),
+      attachment: row.attachment_url ? {
+        url: row.attachment_url,
+        name: row.attachment_name || "file",
+        type: row.attachment_type || "application/octet-stream",
+        size: row.attachment_size || 0
+      } : null,
+      reactions: reactionMap[row.id] || []
+    };
+  });
 }
 
 async function ensureChatUser(account) {
@@ -921,6 +958,11 @@ app.post("/api/friends/:id/accept", requireAccount, async (req,res)=>{
       .update({status:"accepted",updated_at:new Date().toISOString()}).eq("id",row.id)
       .select().single();
     if(updateError) throw updateError;
+
+    // Accepted friends automatically get a DM entry. The user does not
+    // need a separate "new DM" action.
+    await getOrCreateDmConversation(row.user_a_id, row.user_b_id);
+
     await sendSocialUpdate(row.user_a_id);
     await sendSocialUpdate(row.user_b_id);
     await sendToAccount(row.requester_id,{type:"friend_accepted",friendshipId:row.id});
