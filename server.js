@@ -316,6 +316,32 @@ app.patch("/api/profile", requireAccount, async (req, res) => {
       .single();
 
     if (error) throw error;
+
+    // Keep the chat identity in sync immediately after profile edits.
+    await supabase
+      .from("chat_users")
+      .update({
+        username: data.username,
+        avatar_url: data.avatar_url || null
+      })
+      .eq("username", data.username);
+
+    for (const [client, info] of clients) {
+      if (info.username === data.username && client.readyState === 1) {
+        info.name = data.display_name;
+        info.avatarUrl = data.avatar_url || null;
+        client.send(JSON.stringify({
+          type: "profile_updated",
+          account: {
+            username: data.username,
+            displayName: data.display_name,
+            bio: data.bio,
+            avatarUrl: data.avatar_url || null
+          }
+        }));
+      }
+    }
+
     res.json({ ok: true, account: data });
   } catch (error) {
     console.error("Profile update error:", error);

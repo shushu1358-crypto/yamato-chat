@@ -39,3 +39,39 @@ grant select, insert, update, delete on table public.accounts, public.sessions t
 
 -- 既存のchat_usersとの互換性用:
 -- V2.2以降はaccountsを正式なログインIDとして使用します。
+
+
+-- Yamato Chat global settings.
+-- The gate password is one shared password for all users and compatible works.
+create table if not exists public.yamato_settings (
+    key text primary key,
+    value_hash text not null,
+    updated_at timestamptz not null default now()
+);
+
+alter table public.yamato_settings enable row level security;
+
+grant select, insert, update, delete
+on table public.yamato_settings
+to service_role;
+
+
+-- The gate password is global, not per-account.
+-- Keep the old column only for compatibility with an earlier V2.2 schema.
+alter table public.accounts
+  alter column gate_password_hash drop not null;
+
+
+-- V2.3: profile avatars + chat attachments
+alter table public.chat_users
+  add column if not exists avatar_url text;
+
+alter table public.messages
+  add column if not exists attachment_url text,
+  add column if not exists attachment_name text,
+  add column if not exists attachment_type text,
+  add column if not exists attachment_size bigint;
+
+grant select, insert, update, delete
+on table public.chat_users, public.messages
+to service_role;

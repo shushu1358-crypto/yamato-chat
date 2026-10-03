@@ -99,9 +99,9 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
         <button type="button" class="eye" data-target="loginPassword">◉</button>
       </div>
 
-      <label for="loginGate">共通ゲートパスワード</label>
+      <label for="loginGate">共通共通ゲートパスワード</label>
       <div class="password-wrap">
-        <input id="loginGate" type="password" maxlength="128" placeholder="共通共通ゲートパスワード" required>
+        <input id="loginGate" type="password" maxlength="128" placeholder="共通共通共通ゲートパスワード" required>
         <button type="button" class="eye" data-target="loginGate">◉</button>
       </div>
 
@@ -126,12 +126,12 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
         <button type="button" class="eye" data-target="regPassword">◉</button>
       </div>
 
-      <label for="regGate">共通ゲートパスワード</label>
+      <label for="regGate">共通共通ゲートパスワード</label>
       <div class="password-wrap">
-        <input id="regGate" type="password" maxlength="128" minlength="4" placeholder="共通共通ゲートパスワード" required>
+        <input id="regGate" type="password" maxlength="128" minlength="4" placeholder="共通共通共通ゲートパスワード" required>
         <button type="button" class="eye" data-target="regGate">◉</button>
       </div>
-      <div class="gate-note">全員共通のYamato Chat共通ゲートパスワードです。</div>
+      <div class="gate-note">全員共通のYamato Chat共通共通ゲートパスワードです。</div>
 
       <label for="regBio">自己紹介（任意）</label>
       <textarea id="regBio" maxlength="500" placeholder="簡単な自己紹介"></textarea>
@@ -269,15 +269,15 @@ async function api(url, options = {}) {
 }
 
 async function checkSession() {
-  try {
-    const data = await api("/api/me");
-    setAccount(data.account);
-    setAuthVisible(false);
-    connect();
-  } catch {
-    setAuthVisible(true);
-    showLogin();
+  // Always require an explicit login when the page is opened.
+  // The existing server session is not automatically restored in the browser.
+  account = null;
+  if (ws) {
+    try { ws.close(); } catch {}
+    ws = null;
   }
+  setAuthVisible(true);
+  showLogin();
 }
 
 async function login(e) {
@@ -346,6 +346,19 @@ function connect() {
       return;
     }
 
+    if (data.type === "profile_updated") {
+      if (data.account) {
+        setAccount({
+          username: data.account.username,
+          display_name: data.account.displayName,
+          bio: data.account.bio,
+          avatar_url: data.account.avatarUrl
+        });
+        updateVisibleAvatars(data.account.avatarUrl || null);
+      }
+      return;
+    }
+
     if (data.type === "welcome") {
       myId = data.id;
       if (data.account) {
@@ -388,6 +401,17 @@ function connect() {
     clearTimeout(reconnectTimer);
     reconnectTimer = setTimeout(connect, 2000);
   };
+}
+
+function updateVisibleAvatars(url) {
+  document.querySelectorAll(".message").forEach(wrap => {
+    const nameEl = wrap.querySelector(".msghead b");
+    if (!nameEl || !account) return;
+    const isMe = nameEl.textContent === (account.display_name || account.displayName);
+    if (!isMe) return;
+    const avatar = wrap.querySelector(".avatar");
+    if (avatar) setAvatarElement(avatar, url, nameEl.textContent);
+  });
 }
 
 function appendMessage(m) {
@@ -528,6 +552,7 @@ $("saveProfileButton").addEventListener("click", async () => {
       const avatarData = await response.json();
       if (!response.ok) throw new Error(avatarData.error || "アイコンの更新に失敗しました");
       setAccount(avatarData.account);
+      updateVisibleAvatars(avatarData.account.avatar_url || avatarData.account.avatarUrl || null);
       $("avatarInput").value = "";
     }
 
