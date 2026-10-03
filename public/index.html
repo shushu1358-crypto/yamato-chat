@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Yamato Chat</title>
+<style>
+:root{
+  --bg:#0f1117;--panel:#171a22;--panel2:#1d212b;--line:#2a3040;
+  --text:#f2f4f8;--muted:#9aa3b5;--accent:#6ea8fe;--hover:#252b38;
+}
+*{box-sizing:border-box}
+body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+.app{display:grid;grid-template-columns:220px 1fr 210px;height:100vh}
+.sidebar,.members{background:var(--panel);border-color:var(--line)}
+.sidebar{border-right:1px solid var(--line);display:flex;flex-direction:column}
+.brand{height:60px;padding:18px;font-weight:800;border-bottom:1px solid var(--line)}
+.brand span{color:var(--accent)}
+.channels{padding:14px 10px;overflow:auto}
+.section{font-size:11px;color:var(--muted);font-weight:700;padding:8px}
+.channel{padding:10px 12px;border-radius:7px;color:#c8ced9;cursor:pointer;margin:2px 0}
+.channel:hover,.channel.active{background:var(--hover);color:white}
+.me{margin-top:auto;padding:12px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center}
+.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#3b82f6;font-weight:700;flex:none}
+.meinfo{min-width:0}.meinfo b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.status{font-size:11px;color:#67d391}
+.main{display:flex;flex-direction:column;min-width:0}
+.header{height:60px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 18px;font-weight:700}
+.header small{margin-left:10px;color:var(--muted);font-weight:400}
+.messages{flex:1;overflow:auto;padding:18px 22px}
+.message{display:flex;gap:11px;margin:0 0 16px}
+.message .avatar{width:36px;height:36px}
+.msgbody{min-width:0}.msghead{display:flex;gap:8px;align-items:baseline}
+.msghead b{font-size:14px}.time{font-size:10px;color:var(--muted)}
+.text{margin-top:3px;white-space:pre-wrap;word-break:break-word;color:#e1e5ed}
+.system{color:var(--muted);font-size:13px;text-align:center;margin:10px}
+.composer{padding:12px 18px 18px}
+.composer form{display:flex;background:var(--panel2);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.composer input{flex:1;background:transparent;border:0;outline:0;color:white;padding:14px;font-size:14px}
+.composer button{border:0;background:var(--accent);color:#08111f;padding:0 18px;font-weight:700;cursor:pointer}
+.members{border-left:1px solid var(--line);padding:16px;overflow:auto}
+.members h3{font-size:12px;color:var(--muted);margin:4px 0 12px}
+.member{display:flex;align-items:center;gap:9px;padding:7px 0}
+.dot{width:8px;height:8px;border-radius:50%;background:#53d889;box-shadow:0 0 0 3px #1d3a2a}
+.membername{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.overlay{position:fixed;inset:0;background:#080a0fdd;display:grid;place-items:center;z-index:5}
+.card{width:min(420px,90vw);background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:26px}
+.card h1{margin:0 0 8px}.card p{color:var(--muted);font-size:14px}
+.card input{width:100%;padding:13px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:white;outline:0}
+.card button{width:100%;margin-top:12px;padding:13px;border:0;border-radius:8px;background:var(--accent);font-weight:700;cursor:pointer}
+.hidden{display:none}
+@media(max-width:800px){
+ .app{grid-template-columns:170px 1fr}
+ .members{display:none}
+}
+@media(max-width:560px){
+ .app{grid-template-columns:1fr}
+ .sidebar{display:none}
+ .messages{padding:14px}
+}
+</style>
+</head>
+<body>
+<div id="login" class="overlay">
+  <div class="card">
+    <h1>Yamato Chat</h1>
+    <p>まずは表示名を決めてチャットに参加します。</p>
+    <form id="nameForm">
+      <input id="nameInput" maxlength="24" placeholder="表示名" autocomplete="nickname" autofocus>
+      <button>チャットに入る</button>
+    </form>
+  </div>
+</div>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">Yamato <span>Chat</span></div>
+    <div class="channels">
+      <div class="section">CHANNELS</div>
+      <div class="channel active" data-channel="general"># general</div>
+      <div class="channel" data-channel="chat"># 雑談</div>
+      <div class="channel" data-channel="game"># ゲーム</div>
+    </div>
+    <div class="me">
+      <div class="avatar" id="myAvatar">?</div>
+      <div class="meinfo"><b id="myName">Guest</b><div class="status">● オンライン</div></div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="header"># <span id="channelName">general</span><small>リアルタイムチャット</small></div>
+    <div id="messages" class="messages"></div>
+    <div class="composer">
+      <form id="messageForm">
+        <input id="messageInput" maxlength="2000" placeholder="# general にメッセージを送信" autocomplete="off">
+        <button>送信</button>
+      </form>
+    </div>
+  </main>
+
+  <aside class="members">
+    <h3 id="memberCount">ONLINE — 0</h3>
+    <div id="memberList"></div>
+  </aside>
+</div>
+
+<script>
+let ws;
+let myId = "";
+let myName = "";
+let currentChannel = "general";
+
+const $ = id => document.getElementById(id);
+const messages = $("messages");
+
+function connect() {
+  const protocol = location.protocol === "https:" ? "wss:" : "ws:";
+  ws = new WebSocket(`${protocol}//${location.host}`);
+
+  ws.onopen = () => {
+    if (myName) ws.send(JSON.stringify({type:"set_name", name:myName}));
+  };
+
+  ws.onmessage = e => {
+    const data = JSON.parse(e.data);
+
+    if (data.type === "welcome") {
+      myId = data.id;
+      renderHistory(data.messages || []);
+      return;
+    }
+
+    if (data.type === "channel_history") {
+      currentChannel = data.channel;
+      renderHistory(data.messages || []);
+      return;
+    }
+
+    if (data.type === "message") {
+      if (data.channel === currentChannel) appendMessage(data.message);
+      return;
+    }
+
+    if (data.type === "system") {
+      appendSystem(data.text);
+      return;
+    }
+
+    if (data.type === "users") {
+      renderUsers(data.users);
+    }
+  };
+
+  ws.onclose = () => {
+    appendSystem("サーバーとの接続が切れました。再接続を試みています…");
+    setTimeout(connect, 2000);
+  };
+}
+
+function appendMessage(m) {
+  const wrap = document.createElement("div");
+  wrap.className = "message";
+
+  const avatar = document.createElement("div");
+  avatar.className = "avatar";
+  avatar.textContent = (m.user || "?").slice(0,1).toUpperCase();
+
+  const body = document.createElement("div");
+  body.className = "msgbody";
+
+  const head = document.createElement("div");
+  head.className = "msghead";
+  const name = document.createElement("b");
+  name.textContent = m.user;
+  const time = document.createElement("span");
+  time.className = "time";
+  time.textContent = new Date(m.time).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+  head.append(name,time);
+
+  const text = document.createElement("div");
+  text.className = "text";
+  text.textContent = m.text;
+
+  body.append(head,text);
+  wrap.append(avatar,body);
+  messages.appendChild(wrap);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function appendSystem(text) {
+  const el = document.createElement("div");
+  el.className = "system";
+  el.textContent = text;
+  messages.appendChild(el);
+  messages.scrollTop = messages.scrollHeight;
+}
+
+function renderHistory(list) {
+  messages.innerHTML = "";
+  list.forEach(appendMessage);
+}
+
+function renderUsers(users) {
+  $("memberCount").textContent = `ONLINE — ${users.length}`;
+  $("memberList").innerHTML = "";
+  users.forEach(u => {
+    const row = document.createElement("div");
+    row.className = "member";
+    const dot = document.createElement("span");
+    dot.className = "dot";
+    const name = document.createElement("span");
+    name.className = "membername";
+    name.textContent = u.name + (u.id === myId ? " (あなた)" : "");
+    row.append(dot,name);
+    $("memberList").appendChild(row);
+  });
+}
+
+$("nameForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const value = $("nameInput").value.trim().slice(0,24);
+  if (!value) return;
+  myName = value;
+  $("myName").textContent = myName;
+  $("myAvatar").textContent = myName.slice(0,1);
+  $("login").classList.add("hidden");
+  connect();
+  $("messageInput").focus();
+});
+
+$("messageForm").addEventListener("submit", e => {
+  e.preventDefault();
+  const text = $("messageInput").value.trim();
+  if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({type:"message", text}));
+  $("messageInput").value = "";
+});
+
+document.querySelectorAll(".channel").forEach(el => {
+  el.addEventListener("click", () => {
+    const channel = el.dataset.channel;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    document.querySelectorAll(".channel").forEach(x => x.classList.remove("active"));
+    el.classList.add("active");
+    currentChannel = channel;
+    $("channelName").textContent = el.textContent.replace("# ","");
+    ws.send(JSON.stringify({type:"join_channel", channel}));
+    $("messageInput").placeholder = `# ${channel} にメッセージを送信`;
+  });
+});
+</script>
+</body>
+</html>
