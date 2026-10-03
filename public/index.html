@@ -544,8 +544,16 @@ async function toggleReaction(messageId, emoji, targetType, conversationId=null)
 }
 
 function renderReactionBar(wrap, reactions, messageId, targetType, conversationId=null) {
+  if (!wrap) return;
+  const host = wrap.querySelector(".msgbody");
+  if (!host) return;
+
   let bar=wrap.querySelector(".reaction-bar");
-  if(!bar){bar=document.createElement("div");bar.className="reaction-bar";wrap.querySelector(".msgbody").appendChild(bar);}
+  if(!bar){
+    bar=document.createElement("div");
+    bar.className="reaction-bar";
+    host.appendChild(bar);
+  }
   bar.innerHTML="";
   const quick=["👍","❤️","😂","🎉","😮"];
   (reactions||[]).forEach(r=>{
@@ -914,6 +922,10 @@ function appendMessage(m) {
     body.appendChild(attachmentWrap);
   }
 
+  // Put the message body into the wrapper BEFORE rendering reactions.
+  // renderReactionBar() looks up .msgbody inside wrap.
+  wrap.append(avatar, body);
+
   if (m.id) {
     renderReactionBar(
       wrap,
@@ -924,7 +936,6 @@ function appendMessage(m) {
     );
   }
 
-  wrap.append(avatar,body);
   messages.appendChild(wrap);
   messages.scrollTop = messages.scrollHeight;
 }
