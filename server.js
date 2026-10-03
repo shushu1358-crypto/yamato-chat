@@ -605,27 +605,6 @@ async function getHistory(channelKey, reactionUserId = null) {
   }
   const usersById = Object.fromEntries(userRows.map(u => [u.id, u]));
 
-  const ids = rows.map(r => r.id);
-  const reactionRows = ids.length
-    ? await supabase.from("reactions").select("message_id,user_id,emoji").in("message_id", ids)
-    : { data: [], error: null };
-
-  if (reactionRows.error) {
-    console.error("Reaction history load error:", reactionRows.error);
-  }
-
-  const reactionMap = {};
-  for (const r of reactionRows.data || []) {
-    if (!reactionMap[r.message_id]) reactionMap[r.message_id] = [];
-    let item = reactionMap[r.message_id].find(x => x.emoji === r.emoji);
-    if (!item) {
-      item = { emoji: r.emoji, count: 0, mine: false };
-      reactionMap[r.message_id].push(item);
-    }
-    item.count++;
-    if (r.user_id === reactionUserId) item.mine = true;
-  }
-
   return rows.map(row => {
     const u = usersById[row.user_id] || {};
     return {
@@ -651,7 +630,7 @@ async function getHistory(channelKey, reactionUserId = null) {
         type: row.attachment_type || "application/octet-stream",
         size: row.attachment_size || 0
       } : null,
-      reactions: reactionMap[row.id] || []
+      reactions: []
     };
   });
 }
@@ -1230,51 +1209,6 @@ wss.on("connection", async (ws, req) => {
           client.send(JSON.stringify({type:"dm_message_deleted",conversationId,messageId}));
         }
       }
-      return;
-    }
-
-    if (data.type === "reaction_toggle") {
-      const targetType = data.targetType === "dm" ? "dm" : "channel";
-      const messageId = String(data.messageId || "");
-      const emoji = String(data.emoji || "").trim().slice(0,16);
-      if (!messageId || !emoji) return;
-
-      let allowed = false;
-      let recipients = [];
-      if (targetType === "channel") {
-        const channelId = channels[user.channel]?.id;
-        if (!channelId) return;
-        const {data:target,error}=await supabase.from("messages").select("id,channel_id").eq("id",messageId).maybeSingle();
-        if(error || !target || target.channel_id!==channelId) return;
-        allowed = true;
-        recipients = [...clients.entries()].filter(([c,info])=>info.view==="channel"&&info.channel===user.channel&&c.readyState===1);
-      } else {
-        const conversationId=String(data.conversationId||"");
-        const participant=await getDmParticipants(conversationId);
-        if(!participant || ![participant.user_a_id,participant.user_b_id].includes(user.accountId)) return;
-        const {data:target,error}=await supabase.from("dm_messages").select("id,conversation_id").eq("id",messageId).maybeSingle();
-        if(error || !target || target.conversation_id!==conversationId) return;
-        allowed=true;
-        recipients=[...clients.entries()].filter(([c,info])=>info.view==="dm"&&info.dmConversationId===conversationId&&c.readyState===1);
-      }
-      if(!allowed) return;
-
-      const column=targetType==="channel"?"message_id":"dm_message_id";
-      const existing=await supabase.from("reactions").select("id").eq(column,messageId).eq("user_id",user.dbUserId).eq("emoji",emoji).maybeSingle();
-      if(existing.error){console.error("Reaction lookup error:",existing.error);return;}
-      if(existing.data){
-        await supabase.from("reactions").delete().eq("id",existing.data.id);
-      } else {
-        const row={user_id:user.dbUserId,emoji};
-        row[column]=messageId;
-        const {error}=await supabase.from("reactions").insert(row);
-        if(error){console.error("Reaction insert error:",error);return;}
-      }
-
-      const summary=await getReactionSummary(targetType,messageId,user.dbUserId);
-      const payload={type:"reaction_update",targetType,messageId,reactions:summary};
-      if(targetType==="dm") payload.conversationId=String(data.conversationId||"");
-      for(const [client] of recipients) client.send(JSON.stringify(payload));
       return;
     }
 

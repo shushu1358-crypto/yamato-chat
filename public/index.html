@@ -52,10 +52,6 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .friend-actions button{border:0;border-radius:6px;padding:7px 9px;background:#353a47;color:#fff;cursor:pointer}
 .friend-actions .accept{background:#3d8d63}
 .friend-actions .danger{background:#8f3d45}
-.reaction-bar{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
-.reaction{border:1px solid var(--line);background:#1b1f28;color:#dce2ed;border-radius:12px;padding:2px 7px;font-size:12px;cursor:pointer}
-.reaction.mine{border-color:var(--accent);background:#272d55}
-.reaction-add{border:1px solid var(--line);background:#171a22;color:#bfc7d8;border-radius:12px;padding:2px 7px;cursor:pointer;font-size:12px}
 .hidden{display:none!important}
 .main{display:flex;flex-direction:column;min-width:0;min-height:0}
 .header{height:60px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 18px;font-weight:700}
@@ -420,8 +416,15 @@ async function register(e) {
 }
 
 
+async function syncCurrentAccount() {
+  const data = await api("/api/me");
+  setAccount(data.account);
+  return data.account;
+}
+
 async function loadFriends() {
   try {
+    await syncCurrentAccount();
     const data = await api("/api/friends");
     friendData = data.data || {friends:[],incoming:[],outgoing:[]};
     renderFriends();
@@ -538,37 +541,6 @@ function renderDmHistory(list) {
   messages.scrollTop=messages.scrollHeight;
 }
 
-async function toggleReaction(messageId, emoji, targetType, conversationId=null) {
-  if (ws?.readyState!==WebSocket.OPEN) return;
-  ws.send(JSON.stringify({type:"reaction_toggle",messageId,emoji,targetType,conversationId}));
-}
-
-function renderReactionBar(wrap, reactions, messageId, targetType, conversationId=null) {
-  if (!wrap) return;
-  const host = wrap.querySelector(".msgbody");
-  if (!host) return;
-
-  let bar=wrap.querySelector(".reaction-bar");
-  if(!bar){
-    bar=document.createElement("div");
-    bar.className="reaction-bar";
-    host.appendChild(bar);
-  }
-  bar.innerHTML="";
-  const quick=["👍","❤️","😂","🎉","😮"];
-  (reactions||[]).forEach(r=>{
-    const b=document.createElement("button");b.className="reaction"+(r.mine?" mine":"");b.textContent=`${r.emoji} ${r.count}`;
-    b.onclick=()=>toggleReaction(messageId,r.emoji,targetType,conversationId);
-    bar.appendChild(b);
-  });
-  quick.forEach(emoji=>{
-    const b=document.createElement("button");b.className="reaction-add";b.textContent=emoji;
-    b.title="リアクション";
-    b.onclick=()=>toggleReaction(messageId,emoji,targetType,conversationId);
-    bar.appendChild(b);
-  });
-}
-
 function connect() {
   if (!account) return;
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
@@ -644,12 +616,6 @@ function connect() {
       if (viewMode==="dm" && data.conversationId===currentDmId) {
         removeMessageFromDom(data.messageId);
       }
-      return;
-    }
-
-    if (data.type === "reaction_update") {
-      const wrap=document.querySelector(`.message[data-message-id="${CSS.escape(data.messageId)}"]`);
-      if(wrap) renderReactionBar(wrap,data.reactions||[],data.messageId,data.targetType,data.conversationId||null);
       return;
     }
 
@@ -921,21 +887,7 @@ function appendMessage(m) {
 
     body.appendChild(attachmentWrap);
   }
-
-  // Put the message body into the wrapper BEFORE rendering reactions.
-  // renderReactionBar() looks up .msgbody inside wrap.
   wrap.append(avatar, body);
-
-  if (m.id) {
-    renderReactionBar(
-      wrap,
-      m.reactions || [],
-      m.id,
-      m.dmConversationId ? "dm" : "channel",
-      m.dmConversationId || null
-    );
-  }
-
   messages.appendChild(wrap);
   messages.scrollTop = messages.scrollHeight;
 }
@@ -1004,6 +956,7 @@ $("sendFriendRequest").addEventListener("click", async () => {
   if(!username) return;
   $("friendError").textContent="送信中…";
   try {
+    await syncCurrentAccount();
     await api("/api/friends/request",{method:"POST",body:JSON.stringify({username})});
     $("friendUsername").value="";
     $("friendError").textContent="フレンド申請を送信しました";
