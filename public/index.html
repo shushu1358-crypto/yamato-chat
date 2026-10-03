@@ -25,17 +25,17 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--accent2);font-weight:700;flex:none}
 .meinfo{min-width:0}.meinfo b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .status{font-size:11px;color:#67d391}
-.main{display:flex;flex-direction:column;min-width:0}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
 .header{height:60px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 18px;font-weight:700}
 .header small{margin-left:10px;color:var(--muted);font-weight:400}
-.messages{flex:1;overflow:auto;padding:18px 22px}
+.messages{flex:1;min-height:0;overflow:auto;padding:18px 22px}
 .message{display:flex;gap:11px;margin:0 0 16px}
 .message .avatar{width:36px;height:36px}
 .msgbody{min-width:0}.msghead{display:flex;gap:8px;align-items:baseline}
 .msghead b{font-size:14px}.time{font-size:10px;color:var(--muted)}
 .text{margin-top:3px;white-space:pre-wrap;word-break:break-word;color:#e1e5ed}
 .system{color:var(--muted);font-size:13px;text-align:center;margin:10px}
-.composer{padding:12px 18px 18px}
+.composer{flex:0 0 auto;padding:12px 18px 18px}
 .composer form{display:flex;align-items:stretch;height:44px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;overflow:hidden}
 .composer input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:white;padding:0 14px;font-size:14px}
 .composer button{border:0;background:var(--accent);color:white;padding:0 18px;font-weight:700;cursor:pointer}
@@ -78,7 +78,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .profile-edit .secondary{background:var(--hover)}
 .file-row{display:flex;gap:8px;align-items:center}
 .attach-btn{width:42px;border:0;border-radius:7px;background:var(--hover);color:white;cursor:pointer;font-size:20px}
-.attachment{margin-top:8px;width:min(460px,calc(100vw - 90px));max-width:100%;background:#1f222b;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.attachment{margin-top:8px;width:min(460px,calc(100vw - 90px));max-width:100%;box-sizing:border-box;background:#1f222b;border:1px solid var(--line);border-radius:8px;overflow:hidden}
 .attachment-image{display:block;width:auto;max-width:100%;max-height:300px;height:auto;object-fit:contain;background:#11131a}
 .attachment-actions{display:flex;align-items:center;gap:10px;padding:7px 9px}
 .attachment-name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
