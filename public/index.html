@@ -30,6 +30,13 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .header small{margin-left:10px;color:var(--muted);font-weight:400}
 .messages{flex:1;min-height:0;overflow:auto;padding:18px 22px}
 .message{display:flex;gap:11px;margin:0 0 16px}
+.message:hover .message-actions{opacity:1;pointer-events:auto}
+.message-actions{display:inline-flex;gap:4px;margin-left:6px;opacity:0;pointer-events:none;vertical-align:middle;transition:opacity .12s}
+.message-action{border:0;background:#2a2e39;color:#cbd1df;border-radius:5px;width:25px;height:23px;cursor:pointer;font-size:13px;display:grid;place-items:center;padding:0}
+.message-action:hover{background:#3a3f4d;color:#fff}
+.message-action.delete:hover{background:#a83d45}
+.edited{font-size:10px;color:var(--muted);margin-left:4px}
+
 .message .avatar{width:36px;height:36px}
 .msgbody{min-width:0}.msghead{display:flex;gap:8px;align-items:baseline}
 .msghead b{font-size:14px}.time{font-size:10px;color:var(--muted)}
@@ -403,6 +410,16 @@ function connect() {
       return;
     }
 
+    if (data.type === "message_edited") {
+      if (data.channel === currentChannel) updateMessageInDom(data.messageId, data.text, data.editedAt);
+      return;
+    }
+
+    if (data.type === "message_deleted") {
+      if (data.channel === currentChannel) removeMessageFromDom(data.messageId);
+      return;
+    }
+
     if (data.type === "system") {
       appendSystem(data.text);
       return;
@@ -451,23 +468,113 @@ async function downloadAttachment(url, name) {
   }
 }
 
+function updateMessageInDom(messageId, textValue, editedAt) {
+  const wrap = document.querySelector(`.message[data-message-id="${CSS.escape(messageId)}"]`);
+  if (!wrap) return;
+
+  let text = wrap.querySelector(".text");
+  if (textValue) {
+    if (!text) {
+      text = document.createElement("div");
+      text.className = "text";
+      const body = wrap.querySelector(".msgbody");
+      const head = wrap.querySelector(".msghead");
+      body.insertBefore(text, head.nextSibling);
+    }
+    text.textContent = textValue;
+  } else if (text) {
+    text.remove();
+  }
+
+  const head = wrap.querySelector(".msghead");
+  let edited = head.querySelector(".edited");
+  if (!edited) {
+    edited = document.createElement("span");
+    edited.className = "edited";
+    head.appendChild(edited);
+  }
+  edited.textContent = "(編集済み)";
+}
+
+function removeMessageFromDom(messageId) {
+  const wrap = document.querySelector(`.message[data-message-id="${CSS.escape(messageId)}"]`);
+  if (wrap) {
+    wrap.remove();
+  }
+}
+
+function editOwnMessage(messageId, currentText) {
+  const value = window.prompt("メッセージを編集", currentText || "");
+  if (value === null) return;
+  const text = value.trim();
+  if (!text || text === currentText) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({type:"edit_message", messageId, text}));
+}
+
+function deleteOwnMessage(messageId) {
+  if (!window.confirm("このメッセージを削除しますか？")) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({type:"delete_message", messageId}));
+}
+
 function appendMessage(m) {
   const wrap = document.createElement("div");
   wrap.className = "message";
+  wrap.dataset.messageId = m.id || "";
+
   const avatar = document.createElement("div");
   avatar.className = "avatar";
   setAvatarElement(avatar, m.avatarUrl, m.user);
 
   const body = document.createElement("div");
   body.className = "msgbody";
+
   const head = document.createElement("div");
   head.className = "msghead";
+
   const name = document.createElement("b");
   name.textContent = m.user;
+
   const time = document.createElement("span");
   time.className = "time";
   time.textContent = new Date(m.time).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
-  head.append(name,time);
+
+  head.append(name, time);
+
+  const isMine = !!account && m.userId && account.id && String(m.userId) === String(account.chatUserId);
+  // The server sends the DB chat-user id as userId; if account doesn't have it,
+  // fall back to the current account's username/display-name match for own messages.
+  const own = isMine || (!!account && account.chatUserId && m.userId && String(m.userId) === String(account.chatUserId));
+
+  if (own && m.id) {
+    const actions = document.createElement("span");
+    actions.className = "message-actions";
+
+    const edit = document.createElement("button");
+    edit.className = "message-action";
+    edit.type = "button";
+    edit.title = "編集";
+    edit.textContent = "✎";
+    edit.addEventListener("click", () => editOwnMessage(m.id, m.text || ""));
+
+    const del = document.createElement("button");
+    del.className = "message-action delete";
+    del.type = "button";
+    del.title = "削除";
+    del.textContent = "🗑";
+    del.addEventListener("click", () => deleteOwnMessage(m.id));
+
+    actions.append(edit, del);
+    head.appendChild(actions);
+  }
+
+  if (m.editedAt) {
+    const edited = document.createElement("span");
+    edited.className = "edited";
+    edited.textContent = "(編集済み)";
+    head.appendChild(edited);
+  }
 
   if (m.text) {
     const text = document.createElement("div");
@@ -527,9 +634,11 @@ function appendMessage(m) {
 
       const info = document.createElement("div");
       info.className = "attachment-file-info";
+
       const label = document.createElement("div");
       label.className = "attachment-name";
       label.textContent = name;
+
       const meta = document.createElement("div");
       meta.className = "attachment-meta";
       meta.textContent = formatBytes(m.attachment.size);
@@ -550,7 +659,7 @@ function appendMessage(m) {
   }
 
   body.prepend(head);
-  wrap.append(avatar,body);
+  wrap.append(avatar, body);
   messages.appendChild(wrap);
   messages.scrollTop = messages.scrollHeight;
 }
