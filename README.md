@@ -1,36 +1,26 @@
-# Yamato Chat v1
+# Yamato Chat v2 - Supabase版
 
-Discord風の軽量リアルタイムチャット。
+Render + Supabaseでメッセージを永続保存するYamato Chat。
 
-## ローカル起動
+## RenderのEnvironment Variables
+
+- `SUPABASE_URL`
+- `SUPABASE_SECRET_KEY`
+
+Secret KeyはGitHubやブラウザ側のコードに書かないでください。
+
+## 起動
 
 ```bash
 npm install
 npm start
 ```
 
-ブラウザで http://localhost:3000
+## V2で追加されたもの
 
-## Render
+- Supabaseへのメッセージ保存
+- Render再起動後も過去メッセージを復元
+- 初回起動時にYamato Chatサーバーと3チャンネルを自動作成
+- `/health` にSupabase接続構成を表示
 
-- GitHubへこのフォルダをpush
-- Renderで New → Web Service
-- リポジトリを選択
-- Build Command: `npm install`
-- Start Command: `npm start`
-- Environment: Node
-- Freeプランでも試作可能
-
-## 現在のV1
-
-- 表示名
-- リアルタイムWebSocketチャット
-- 3チャンネル
-- オンラインユーザー表示
-- 直近200件のメッセージをサーバー内に保持
-- RenderのHTTPS環境では自動的にWSSを利用
-
-## 注意
-
-V1はDBをまだ使っていません。Renderの無料サービスが再起動・停止すると履歴は消えます。
-次の段階でSupabase/PostgreSQLを追加して永続化します。
+UIはV1と同じです。
