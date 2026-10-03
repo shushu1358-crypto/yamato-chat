@@ -1,6 +1,6 @@
 {
   "name": "yamato-chat",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": true,
   "description": "Lightweight Discord-style chat server with Supabase persistence",
   "main": "server.js",
@@ -13,6 +13,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.0.0",
     "express": "^5.1.0",
-    "ws": "^8.18.3"
+    "ws": "^8.18.3",
+    "bcryptjs": "^2.4.3"
   }
 }

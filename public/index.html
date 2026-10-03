@@ -7,7 +7,8 @@
 <style>
 :root{
   --bg:#0f1117;--panel:#171a22;--panel2:#1d212b;--line:#2a3040;
-  --text:#f2f4f8;--muted:#9aa3b5;--accent:#6ea8fe;--hover:#252b38;
+  --text:#f2f4f8;--muted:#9aa3b5;--accent:#5b67f1;--accent2:#3b82f6;
+  --hover:#252b38;--danger:#ef6464;
 }
 *{box-sizing:border-box}
 body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
@@ -20,8 +21,8 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .section{font-size:11px;color:var(--muted);font-weight:700;padding:8px}
 .channel{padding:10px 12px;border-radius:7px;color:#c8ced9;cursor:pointer;margin:2px 0}
 .channel:hover,.channel.active{background:var(--hover);color:white}
-.me{margin-top:auto;padding:12px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center}
-.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:#3b82f6;font-weight:700;flex:none}
+.me{margin-top:auto;padding:12px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;cursor:pointer}
+.avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--accent2);font-weight:700;flex:none}
 .meinfo{min-width:0}.meinfo b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .status{font-size:11px;color:#67d391}
 .main{display:flex;flex-direction:column;min-width:0}
@@ -37,38 +38,95 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .composer{padding:12px 18px 18px}
 .composer form{display:flex;background:var(--panel2);border:1px solid var(--line);border-radius:9px;overflow:hidden}
 .composer input{flex:1;background:transparent;border:0;outline:0;color:white;padding:14px;font-size:14px}
-.composer button{border:0;background:var(--accent);color:#08111f;padding:0 18px;font-weight:700;cursor:pointer}
+.composer button{border:0;background:var(--accent);color:white;padding:0 18px;font-weight:700;cursor:pointer}
 .members{border-left:1px solid var(--line);padding:16px;overflow:auto}
 .members h3{font-size:12px;color:var(--muted);margin:4px 0 12px}
 .member{display:flex;align-items:center;gap:9px;padding:7px 0}
 .dot{width:8px;height:8px;border-radius:50%;background:#53d889;box-shadow:0 0 0 3px #1d3a2a}
 .membername{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.overlay{position:fixed;inset:0;background:#080a0fdd;display:grid;place-items:center;z-index:5}
-.card{width:min(420px,90vw);background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:26px}
-.card h1{margin:0 0 8px}.card p{color:var(--muted);font-size:14px}
-.card input{width:100%;padding:13px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:white;outline:0}
-.card button{width:100%;margin-top:12px;padding:13px;border:0;border-radius:8px;background:var(--accent);font-weight:700;cursor:pointer}
-.hidden{display:none}
-@media(max-width:800px){
- .app{grid-template-columns:170px 1fr}
- .members{display:none}
-}
-@media(max-width:560px){
- .app{grid-template-columns:1fr}
- .sidebar{display:none}
- .messages{padding:14px}
-}
+
+.overlay{position:fixed;inset:0;background:#080a0fee;display:grid;place-items:center;z-index:10;padding:20px;overflow:auto}
+.auth-card{width:min(430px,92vw);background:#303238;border-radius:12px;padding:28px 24px;box-shadow:0 12px 50px #0008}
+.auth-card h1{text-align:center;font-size:23px;margin:0 0 24px}
+.auth-card label{display:block;color:#d8dbe3;font-size:13px;margin:13px 0 6px}
+.auth-card input,.auth-card textarea{width:100%;padding:11px 12px;border:0;border-radius:7px;background:#1f2024;color:white;outline:0;font:inherit}
+.auth-card input:focus,.auth-card textarea:focus{box-shadow:0 0 0 2px #6974ff}
+.auth-card textarea{resize:vertical;min-height:78px}
+.password-wrap{position:relative}
+.password-wrap input{padding-right:44px}
+.eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:#bfc5d1;cursor:pointer;font-size:16px}
+.auth-btn{width:100%;margin-top:18px;padding:12px;border:0;border-radius:7px;background:#5b67f1;color:white;font-weight:700;font-size:15px;cursor:pointer}
+.auth-btn:hover{filter:brightness(1.08)}
+.auth-switch{text-align:center;color:#9aa3b5;font-size:13px;margin:28px 0 0}
+.auth-switch button{border:0;background:none;color:#32b5ff;cursor:pointer;font:inherit}
+.auth-error{min-height:18px;margin-top:10px;color:#ff8d8d;font-size:13px;text-align:center}
+.gate-note{color:#8f96a7;font-size:11px;margin-top:4px}
+.hidden{display:none!important}
+
+.profile-panel{position:fixed;right:18px;bottom:70px;width:min(330px,calc(100vw - 36px));background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;z-index:4;box-shadow:0 12px 40px #0008}
+.profile-panel h3{margin:0 0 12px}.profile-panel .row{margin:10px 0}.profile-panel .label{font-size:11px;color:var(--muted)}.profile-panel .value{word-break:break-all}
+.profile-panel button{margin-top:10px;width:100%;padding:10px;border:0;border-radius:7px;cursor:pointer;background:var(--hover);color:white}
+.profile-panel .logout{background:#7a3030}
+@media(max-width:800px){.app{grid-template-columns:170px 1fr}.members{display:none}}
+@media(max-width:560px){.app{grid-template-columns:1fr}.sidebar{display:none}.messages{padding:14px}}
 </style>
 </head>
 <body>
-<div id="login" class="overlay">
-  <div class="card">
-    <h1>Yamato Chat</h1>
-    <p>まずは表示名を決めてチャットに参加します。</p>
-    <form id="nameForm">
-      <input id="nameInput" maxlength="24" placeholder="表示名" autocomplete="nickname" autofocus>
-      <button>チャットに入る</button>
+
+<div id="authOverlay" class="overlay">
+  <div id="loginCard" class="auth-card">
+    <h1>YDM にログイン</h1>
+    <form id="loginForm">
+      <label for="loginUsername">ユーザー名</label>
+      <input id="loginUsername" maxlength="24" placeholder="ユーザー名" autocomplete="username" required>
+
+      <label for="loginPassword">パスワード</label>
+      <div class="password-wrap">
+        <input id="loginPassword" type="password" maxlength="128" placeholder="パスワード" autocomplete="current-password" required>
+        <button type="button" class="eye" data-target="loginPassword">◉</button>
+      </div>
+
+      <label for="loginGate">ゲートパスワード</label>
+      <div class="password-wrap">
+        <input id="loginGate" type="password" maxlength="128" placeholder="チーム共有パスワード" required>
+        <button type="button" class="eye" data-target="loginGate">◉</button>
+      </div>
+
+      <div id="loginError" class="auth-error"></div>
+      <button class="auth-btn">ログイン</button>
     </form>
+    <div class="auth-switch">アカウントを持っていない場合は <button id="showRegister">新規登録</button></div>
+  </div>
+
+  <div id="registerCard" class="auth-card hidden">
+    <h1>YDM に新規登録</h1>
+    <form id="registerForm">
+      <label for="regDisplayName">表示名 <b>*</b></label>
+      <input id="regDisplayName" maxlength="24" placeholder="チャットで表示される名前" autocomplete="nickname" required>
+
+      <label for="regUsername">ユーザー名 <b>*</b></label>
+      <input id="regUsername" maxlength="24" pattern="[A-Za-z0-9_]{3,24}" placeholder="半角英数字と _ のみ（ログインに使用）" autocomplete="username" required>
+
+      <label for="regPassword">パスワード <b>*</b></label>
+      <div class="password-wrap">
+        <input id="regPassword" type="password" maxlength="128" minlength="4" placeholder="4文字以上" autocomplete="new-password" required>
+        <button type="button" class="eye" data-target="regPassword">◉</button>
+      </div>
+
+      <label for="regGate">ゲートパスワード</label>
+      <div class="password-wrap">
+        <input id="regGate" type="password" maxlength="128" minlength="4" placeholder="チーム共有パスワード" required>
+        <button type="button" class="eye" data-target="regGate">◉</button>
+      </div>
+      <div class="gate-note">YDMへのアクセスに使う追加パスワードです。</div>
+
+      <label for="regBio">自己紹介（任意）</label>
+      <textarea id="regBio" maxlength="500" placeholder="簡単な自己紹介"></textarea>
+
+      <div id="registerError" class="auth-error"></div>
+      <button class="auth-btn">登録</button>
+    </form>
+    <div class="auth-switch">すでにアカウントをお持ちの場合は <button id="showLogin">ログイン</button></div>
   </div>
 </div>
 
@@ -81,7 +139,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
       <div class="channel" data-channel="chat"># 雑談</div>
       <div class="channel" data-channel="game"># ゲーム</div>
     </div>
-    <div class="me">
+    <div class="me" id="profileButton">
       <div class="avatar" id="myAvatar">?</div>
       <div class="meinfo"><b id="myName">Guest</b><div class="status">● オンライン</div></div>
     </div>
@@ -104,36 +162,153 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
   </aside>
 </div>
 
+<div id="profilePanel" class="profile-panel hidden">
+  <h3>プロフィール</h3>
+  <div class="row"><div class="label">表示名</div><div class="value" id="profileName"></div></div>
+  <div class="row"><div class="label">ユーザー名</div><div class="value" id="profileUsername"></div></div>
+  <div class="row"><div class="label">自己紹介</div><div class="value" id="profileBio"></div></div>
+  <button id="logoutButton" class="logout">ログアウト</button>
+</div>
+
 <script>
 let ws;
 let myId = "";
-let myName = "";
 let currentChannel = "general";
+let account = null;
+let reconnectTimer = null;
 
 const $ = id => document.getElementById(id);
-
-const savedName = localStorage.getItem("yamatoChatName");
-if (savedName) {
-  myName = savedName.slice(0,24);
-  $("myName").textContent = myName;
-  $("myAvatar").textContent = myName.slice(0,1);
-  $("login").classList.add("hidden");
-}
 const messages = $("messages");
 
+function setAuthVisible(show) {
+  $("authOverlay").classList.toggle("hidden", !show);
+}
+
+function showLogin() {
+  $("loginCard").classList.remove("hidden");
+  $("registerCard").classList.add("hidden");
+  $("loginError").textContent = "";
+  $("registerError").textContent = "";
+  $("loginUsername").focus();
+}
+
+function showRegister() {
+  $("loginCard").classList.add("hidden");
+  $("registerCard").classList.remove("hidden");
+  $("loginError").textContent = "";
+  $("registerError").textContent = "";
+  $("regDisplayName").focus();
+}
+
+function setAccount(data) {
+  account = data;
+  $("myName").textContent = account.display_name || account.displayName;
+  $("myAvatar").textContent = (account.display_name || account.displayName || "?").slice(0,1).toUpperCase();
+  $("profileName").textContent = account.display_name || account.displayName || "";
+  $("profileUsername").textContent = "@" + account.username;
+  $("profileBio").textContent = account.bio || "自己紹介はまだありません";
+}
+
+async function api(url, options = {}) {
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    ...options,
+    headers: {"Content-Type":"application/json", ...(options.headers || {})}
+  });
+  const data = await response.json().catch(() => ({ok:false,error:"サーバーから不正な応答が返りました"}));
+  if (!response.ok) throw new Error(data.error || "処理に失敗しました");
+  return data;
+}
+
+async function checkSession() {
+  try {
+    const data = await api("/api/me");
+    setAccount(data.account);
+    setAuthVisible(false);
+    connect();
+  } catch {
+    setAuthVisible(true);
+    showLogin();
+  }
+}
+
+async function login(e) {
+  e.preventDefault();
+  $("loginError").textContent = "ログイン中…";
+  try {
+    const data = await api("/api/login", {
+      method:"POST",
+      body:JSON.stringify({
+        username:$("loginUsername").value.trim(),
+        password:$("loginPassword").value,
+        gatePassword:$("loginGate").value
+      })
+    });
+    setAccount(data.account);
+    setAuthVisible(false);
+    $("loginForm").reset();
+    connect();
+    $("messageInput").focus();
+  } catch (err) {
+    $("loginError").textContent = err.message;
+  }
+}
+
+async function register(e) {
+  e.preventDefault();
+  $("registerError").textContent = "登録中…";
+  try {
+    const data = await api("/api/register", {
+      method:"POST",
+      body:JSON.stringify({
+        displayName:$("regDisplayName").value.trim(),
+        username:$("regUsername").value.trim(),
+        password:$("regPassword").value,
+        gatePassword:$("regGate").value,
+        bio:$("regBio").value.trim()
+      })
+    });
+    setAccount(data.account);
+    setAuthVisible(false);
+    $("registerForm").reset();
+    connect();
+    $("messageInput").focus();
+  } catch (err) {
+    $("registerError").textContent = err.message;
+  }
+}
+
 function connect() {
+  if (!account) return;
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
   ws = new WebSocket(`${protocol}//${location.host}`);
 
   ws.onopen = () => {
-    if (myName) ws.send(JSON.stringify({type:"set_name", name:myName}));
+    $("messages").dataset.connected = "1";
   };
 
   ws.onmessage = e => {
     const data = JSON.parse(e.data);
 
+    if (data.type === "auth_required") {
+      setAuthVisible(true);
+      showLogin();
+      return;
+    }
+
     if (data.type === "welcome") {
       myId = data.id;
+      if (data.account) {
+        setAccount({
+          id:data.account.id,
+          username:data.account.username,
+          display_name:data.account.displayName,
+          bio:data.account.bio,
+          avatar_url:data.account.avatarUrl
+        });
+      }
       renderHistory(data.messages || []);
       return;
     }
@@ -160,22 +335,22 @@ function connect() {
   };
 
   ws.onclose = () => {
+    if (!account) return;
     appendSystem("サーバーとの接続が切れました。再接続を試みています…");
-    setTimeout(connect, 2000);
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connect, 2000);
   };
 }
 
 function appendMessage(m) {
   const wrap = document.createElement("div");
   wrap.className = "message";
-
   const avatar = document.createElement("div");
   avatar.className = "avatar";
   avatar.textContent = (m.user || "?").slice(0,1).toUpperCase();
 
   const body = document.createElement("div");
   body.className = "msgbody";
-
   const head = document.createElement("div");
   head.className = "msghead";
   const name = document.createElement("b");
@@ -218,34 +393,31 @@ function renderUsers(users) {
     dot.className = "dot";
     const name = document.createElement("span");
     name.className = "membername";
-    name.textContent = u.name + (u.id === myId ? " (あなた)" : "");
+    name.textContent = (u.name || u.username) + (u.id === myId ? " (あなた)" : "");
     row.append(dot,name);
     $("memberList").appendChild(row);
   });
 }
 
-$("nameForm").addEventListener("submit", e => {
-  e.preventDefault();
-  const value = $("nameInput").value.trim().slice(0,24);
-  if (!value) return;
-  myName = value;
-  localStorage.setItem("yamatoChatName", myName);
-  $("myName").textContent = myName;
-  $("myAvatar").textContent = myName.slice(0,1);
-  $("login").classList.add("hidden");
-  connect();
-  $("messageInput").focus();
+$("loginForm").addEventListener("submit", login);
+$("registerForm").addEventListener("submit", register);
+$("showRegister").addEventListener("click", showRegister);
+$("showLogin").addEventListener("click", showLogin);
+
+document.querySelectorAll(".eye").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const input = $(btn.dataset.target);
+    input.type = input.type === "password" ? "text" : "password";
+  });
 });
 
 $("messageForm").addEventListener("submit", e => {
   e.preventDefault();
   const text = $("messageInput").value.trim();
   if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({type:"message", text, name: myName}));
+  ws.send(JSON.stringify({type:"message", text}));
   $("messageInput").value = "";
 });
-
-if (myName) connect();
 
 document.querySelectorAll(".channel").forEach(el => {
   el.addEventListener("click", () => {
@@ -259,6 +431,21 @@ document.querySelectorAll(".channel").forEach(el => {
     $("messageInput").placeholder = `# ${channel} にメッセージを送信`;
   });
 });
+
+$("profileButton").addEventListener("click", () => {
+  $("profilePanel").classList.toggle("hidden");
+});
+
+$("logoutButton").addEventListener("click", async () => {
+  await api("/api/logout", {method:"POST"}).catch(()=>{});
+  account = null;
+  if (ws) ws.close();
+  $("profilePanel").classList.add("hidden");
+  setAuthVisible(true);
+  showLogin();
+});
+
+checkSession();
 </script>
 </body>
 </html>

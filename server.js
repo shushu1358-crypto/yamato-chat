@@ -1,6 +1,8 @@
 const express = require("express");
 const http = require("http");
 const path = require("path");
+const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
 const { WebSocketServer } = require("ws");
 const { createClient } = require("@supabase/supabase-js");
 
@@ -27,7 +29,9 @@ const channels = {
 
 const clients = new Map();
 const MAX_MESSAGES = 200;
+const SESSION_DAYS = 30;
 
+app.use(express.json({ limit: "32kb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/health", (_req, res) => {
@@ -35,8 +39,277 @@ app.get("/health", (_req, res) => {
     ok: true,
     service: "Yamato Chat",
     database: "supabase",
+    auth: "accounts",
     online: clients.size
   });
+});
+
+function hashToken(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+function newSessionToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+function parseCookies(req) {
+  const header = req.headers.cookie || "";
+  const out = {};
+  for (const part of header.split(";")) {
+    const i = part.indexOf("=");
+    if (i < 0) continue;
+    const key = part.slice(0, i).trim();
+    const value = part.slice(i + 1).trim();
+    out[key] = decodeURIComponent(value);
+  }
+  return out;
+}
+
+function setSessionCookie(res, token) {
+  const forwarded = String(res.req?.headers?.["x-forwarded-proto"] || "");
+  const secure = forwarded === "https" || process.env.NODE_ENV === "production";
+  const parts = [
+    `yamato_session=${encodeURIComponent(token)}`,
+    "HttpOnly",
+    "Path=/",
+    "SameSite=Lax",
+    `Max-Age=${SESSION_DAYS * 24 * 60 * 60}`
+  ];
+  if (secure) parts.push("Secure");
+  res.setHeader("Set-Cookie", parts.join("; "));
+}
+
+function clearSessionCookie(res) {
+  res.setHeader(
+    "Set-Cookie",
+    "yamato_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0"
+  );
+}
+
+async function getAccountBySessionToken(token) {
+  if (!token) return null;
+
+  const tokenHash = hashToken(token);
+  const { data, error } = await supabase
+    .from("sessions")
+    .select(`
+      id,
+      account_id,
+      expires_at,
+      accounts (
+        id,
+        username,
+        display_name,
+        bio,
+        avatar_url,
+        created_at,
+        last_login_at
+      )
+    `)
+    .eq("token_hash", tokenHash)
+    .gt("expires_at", new Date().toISOString())
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error("Session lookup error:", error);
+    return null;
+  }
+
+  return data?.accounts || null;
+}
+
+async function createSession(accountId) {
+  // Remove old sessions for this account when creating a fresh login.
+  await supabase.from("sessions").delete().eq("account_id", accountId);
+
+  const raw = newSessionToken();
+  const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
+
+  const { error } = await supabase.from("sessions").insert({
+    account_id: accountId,
+    token_hash: hashToken(raw),
+    expires_at: expires
+  });
+
+  if (error) throw error;
+  return raw;
+}
+
+async function requireAccount(req, res, next) {
+  const token = parseCookies(req).yamato_session;
+  const account = await getAccountBySessionToken(token);
+  if (!account) {
+    return res.status(401).json({ ok: false, error: "ログインが必要です" });
+  }
+  req.account = account;
+  req.sessionToken = token;
+  next();
+}
+
+function validUsername(username) {
+  return /^[A-Za-z0-9_]{3,24}$/.test(username);
+}
+
+function validPassword(password) {
+  return typeof password === "string" && password.length >= 4 && password.length <= 128;
+}
+
+function cleanDisplayName(value) {
+  return String(value || "").trim().slice(0, 24);
+}
+
+function cleanBio(value) {
+  return String(value || "").trim().slice(0, 500);
+}
+
+app.post("/api/register", async (req, res) => {
+  try {
+    const username = String(req.body.username || "").trim();
+    const displayName = cleanDisplayName(req.body.displayName);
+    const password = String(req.body.password || "");
+    const gatePassword = String(req.body.gatePassword || "");
+    const bio = cleanBio(req.body.bio);
+
+    if (!validUsername(username)) {
+      return res.status(400).json({
+        ok: false,
+        error: "ユーザー名は半角英数字と _ の3〜24文字にしてください"
+      });
+    }
+    if (!displayName) {
+      return res.status(400).json({ ok: false, error: "表示名を入力してください" });
+    }
+    if (!validPassword(password)) {
+      return res.status(400).json({ ok: false, error: "パスワードは4〜128文字です" });
+    }
+    if (!validPassword(gatePassword)) {
+      return res.status(400).json({ ok: false, error: "ゲートパスワードは4〜128文字です" });
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const gatePasswordHash = await bcrypt.hash(gatePassword, 12);
+
+    const { data: account, error } = await supabase
+      .from("accounts")
+      .insert({
+        username,
+        display_name: displayName,
+        password_hash: passwordHash,
+        gate_password_hash: gatePasswordHash,
+        bio
+      })
+      .select("id, username, display_name, bio, avatar_url, created_at")
+      .single();
+
+    if (error) {
+      if (error.code === "23505") {
+        return res.status(409).json({ ok: false, error: "そのユーザー名はすでに使われています" });
+      }
+      throw error;
+    }
+
+    const token = await createSession(account.id);
+    setSessionCookie(res, token);
+
+    res.json({ ok: true, account });
+  } catch (error) {
+    console.error("Register error:", error);
+    res.status(500).json({ ok: false, error: "登録に失敗しました" });
+  }
+});
+
+app.post("/api/login", async (req, res) => {
+  try {
+    const username = String(req.body.username || "").trim();
+    const password = String(req.body.password || "");
+    const gatePassword = String(req.body.gatePassword || "");
+
+    if (!username || !password || !gatePassword) {
+      return res.status(400).json({ ok: false, error: "すべて入力してください" });
+    }
+
+    const { data: account, error } = await supabase
+      .from("accounts")
+      .select(`
+        id, username, display_name, bio, avatar_url, created_at, last_login_at,
+        password_hash, gate_password_hash
+      `)
+      .eq("username", username)
+      .limit(1)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    // Deliberately use one generic error so account existence is not revealed.
+    if (!account) {
+      return res.status(401).json({ ok: false, error: "ユーザー名またはパスワードが違います" });
+    }
+
+    const passwordOK = await bcrypt.compare(password, account.password_hash);
+    const gateOK = await bcrypt.compare(gatePassword, account.gate_password_hash);
+
+    if (!passwordOK || !gateOK) {
+      return res.status(401).json({ ok: false, error: "ユーザー名またはパスワードが違います" });
+    }
+
+    await supabase
+      .from("accounts")
+      .update({ last_login_at: new Date().toISOString() })
+      .eq("id", account.id);
+
+    const token = await createSession(account.id);
+    setSessionCookie(res, token);
+
+    delete account.password_hash;
+    delete account.gate_password_hash;
+
+    res.json({ ok: true, account });
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ ok: false, error: "ログインに失敗しました" });
+  }
+});
+
+app.get("/api/me", requireAccount, async (req, res) => {
+  res.json({ ok: true, account: req.account });
+});
+
+app.post("/api/logout", async (req, res) => {
+  try {
+    const token = parseCookies(req).yamato_session;
+    if (token) {
+      await supabase.from("sessions").delete().eq("token_hash", hashToken(token));
+    }
+  } catch (error) {
+    console.error("Logout error:", error);
+  }
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+app.patch("/api/profile", requireAccount, async (req, res) => {
+  try {
+    const displayName = cleanDisplayName(req.body.displayName);
+    const bio = cleanBio(req.body.bio);
+
+    if (!displayName) {
+      return res.status(400).json({ ok: false, error: "表示名を入力してください" });
+    }
+
+    const { data, error } = await supabase
+      .from("accounts")
+      .update({ display_name: displayName, bio })
+      .eq("id", req.account.id)
+      .select("id, username, display_name, bio, avatar_url, created_at, last_login_at")
+      .single();
+
+    if (error) throw error;
+    res.json({ ok: true, account: data });
+  } catch (error) {
+    console.error("Profile update error:", error);
+    res.status(500).json({ ok: false, error: "プロフィールの更新に失敗しました" });
+  }
 });
 
 function broadcast(data) {
@@ -51,6 +324,7 @@ function sendUserList() {
     type: "users",
     users: [...clients.values()].map(u => ({
       id: u.id,
+      username: u.username,
       name: u.name,
       channel: u.channel
     }))
@@ -145,11 +419,13 @@ async function getHistory(channelKey) {
   }));
 }
 
-async function ensureUser(name) {
+async function ensureChatUser(account) {
+  // Keep the existing messages schema working while accounts become
+  // the canonical identity for login/profile.
   const { data, error } = await supabase
     .from("chat_users")
     .upsert(
-      { username: name },
+      { username: account.username },
       { onConflict: "username" }
     )
     .select("id, username")
@@ -159,14 +435,36 @@ async function ensureUser(name) {
   return data;
 }
 
-wss.on("connection", async (ws) => {
-  const id = Math.random().toString(36).slice(2, 10);
+wss.on("connection", async (ws, req) => {
+  const token = parseCookies(req).yamato_session;
+  const account = await getAccountBySessionToken(token);
+
+  if (!account) {
+    ws.send(JSON.stringify({ type: "auth_required" }));
+    ws.close(1008, "Authentication required");
+    return;
+  }
+
+  const id = crypto.randomBytes(8).toString("hex");
+
+  let dbUser;
+  try {
+    dbUser = await ensureChatUser(account);
+  } catch (error) {
+    console.error("Chat user sync error:", error);
+    ws.close(1011, "User sync failed");
+    return;
+  }
+
   const user = {
     id,
-    dbUserId: null,
-    name: "Guest",
+    dbUserId: dbUser.id,
+    accountId: account.id,
+    username: account.username,
+    name: account.display_name,
     channel: "general"
   };
+
   clients.set(ws, user);
 
   try {
@@ -175,8 +473,14 @@ wss.on("connection", async (ws) => {
     ws.send(JSON.stringify({
       type: "welcome",
       id,
-      channels: Object.values(channels).map(c => ({
-        id: Object.keys(channels).find(key => channels[key] === c),
+      account: {
+        username: account.username,
+        displayName: account.display_name,
+        bio: account.bio,
+        avatarUrl: account.avatar_url
+      },
+      channels: Object.entries(channels).map(([key, c]) => ({
+        id: key,
         name: c.name
       })),
       currentChannel: "general",
@@ -190,31 +494,11 @@ wss.on("connection", async (ws) => {
     return;
   }
 
-  ws.on("message", async (raw) => {
+  ws.on("message", async raw => {
     let data;
     try {
       data = JSON.parse(raw.toString());
     } catch {
-      return;
-    }
-
-    if (data.type === "set_name") {
-      const name = String(data.name || "").trim().slice(0, 24);
-      if (!name) return;
-
-      try {
-        const dbUser = await ensureUser(name);
-        user.dbUserId = dbUser.id;
-        user.name = dbUser.username;
-
-        broadcast({
-          type: "system",
-          text: `${user.name} が参加しました`
-        });
-        sendUserList();
-      } catch (error) {
-        console.error("User save error:", error);
-      }
       return;
     }
 
@@ -223,8 +507,8 @@ wss.on("connection", async (ws) => {
       if (!channels[channel]) return;
 
       user.channel = channel;
-
       const history = await getHistory(channel);
+
       ws.send(JSON.stringify({
         type: "channel_history",
         channel,
@@ -241,25 +525,6 @@ wss.on("connection", async (ws) => {
       const channelId = channels[channel]?.id;
 
       if (!text || !channelId) return;
-
-      // The client also sends its current display name with each message.
-      // This prevents a race where the first message arrives before set_name
-      // has finished saving the user in Supabase.
-      const requestedName = String(data.name || user.name || "Guest")
-        .trim()
-        .slice(0, 24) || "Guest";
-
-      try {
-        if (requestedName !== user.name || !user.dbUserId) {
-          const dbUser = await ensureUser(requestedName);
-          user.dbUserId = dbUser.id;
-          user.name = dbUser.username;
-          sendUserList();
-        }
-      } catch (error) {
-        console.error("User sync error:", error);
-        return;
-      }
 
       const { data: saved, error } = await supabase
         .from("messages")
@@ -279,6 +544,7 @@ wss.on("connection", async (ws) => {
       const message = {
         id: saved.id,
         userId: saved.user_id,
+        username: user.username,
         user: user.name,
         text: saved.content,
         time: saved.created_at
@@ -300,10 +566,7 @@ wss.on("connection", async (ws) => {
     const oldName = user.name;
     clients.delete(ws);
 
-    if (oldName !== "Guest") {
-      broadcast({ type: "system", text: `${oldName} が退出しました` });
-    }
-
+    broadcast({ type: "system", text: `${oldName} が退出しました` });
     sendUserList();
   });
 });

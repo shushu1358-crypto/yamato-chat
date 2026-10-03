@@ -1,33 +1,36 @@
-# Yamato Chat v2 - Supabase版
+# Yamato Chat V2.2 - Account Edition
 
-Render + Supabaseでメッセージを永続保存するYamato Chat。
+Yamato Chatにアカウント機能を追加した版。
 
-## RenderのEnvironment Variables
+## 追加されたもの
 
-- `SUPABASE_URL`
-- `SUPABASE_SECRET_KEY`
+- YDMログイン画面
+- 新規登録画面
+- 表示名
+- ユーザー名（半角英数字 + `_`）
+- パスワード
+- ゲートパスワード
+- 自己紹介
+- 30日間のサーバー側セッション
+- ログアウト
+- プロフィール表示
+- WebSocket接続をログイン済みアカウントに限定
+- パスワードはbcryptでハッシュ化して保存
+- 既存チャット履歴との互換性を維持
 
-Secret KeyはGitHubやブラウザ側のコードに書かないでください。
+## 重要: 初回セットアップ
 
-## 起動
+GitHubを更新する前後どちらでも構いませんが、Supabase SQL Editorで
+`account_migration.sql` を1回実行してください。
 
-```bash
-npm install
-npm start
-```
+RenderのEnvironment Variablesは既存の
+`SUPABASE_URL`
+`SUPABASE_SECRET_KEY`
+をそのまま使います。
 
-## V2で追加されたもの
+Secret KeyをGitHubやブラウザコードに入れないでください。
 
-- Supabaseへのメッセージ保存
-- Render再起動後も過去メッセージを復元
-- 初回起動時にYamato Chatサーバーと3チャンネルを自動作成
-- `/health` にSupabase接続構成を表示
+## 注意
 
-UIはV1と同じです。
-
-## V2.1 fixes
-
-- メッセージ送信時にも表示名を同期
-- `set_name` のタイミングによる初回送信失敗を防止
-- 表示名をブラウザの localStorage に保存
-- 次回アクセス時は表示名を自動復元
+ゲートパスワードは現在「YDMへのログイン時に必要な追加パスワード」として実装しています。
+将来、作品ごとのゲートパスワードを別テーブルで追加できます。
