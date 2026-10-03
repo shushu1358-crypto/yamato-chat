@@ -805,8 +805,16 @@ async function getFriendData(accountId) {
     const other = byId[otherId];
     if (!other) continue;
     const item = { ...row, other };
-    if (row.status === "accepted") friends.push(item);
-    else if (row.status === "pending" && row.requester_id !== accountId) incoming.push(item);
+    if (row.status === "accepted") {
+      // A friend automatically gets a DM entry. Recreate it if an older
+      // database state is missing the conversation.
+      try {
+        await getOrCreateDmConversation(accountId, otherId);
+      } catch (dmError) {
+        console.error("DM conversation sync error:", dmError);
+      }
+      friends.push(item);
+    } else if (row.status === "pending" && row.requester_id !== accountId) incoming.push(item);
     else if (row.status === "pending" && row.requester_id === accountId) outgoing.push(item);
   }
   return { friends, incoming, outgoing };
@@ -979,6 +987,17 @@ app.delete("/api/friends/:id", requireAccount, async (req,res)=>{
     if(error) throw error;
     if(!row || ![row.user_a_id,row.user_b_id].includes(req.account.id)) return res.status(404).json({ok:false,error:"フレンドが見つかりません"});
     await supabase.from("friendships").delete().eq("id",row.id);
+
+    // DM entries belong to the friendship. Remove the conversation as well
+    // so an old DM cannot reappear after a restart.
+    const [dmA, dmB] = canonicalPair(row.user_a_id, row.user_b_id);
+    const { error: dmDeleteError } = await supabase
+      .from("dm_conversations")
+      .delete()
+      .eq("user_a_id", dmA)
+      .eq("user_b_id", dmB);
+    if (dmDeleteError) console.error("DM conversation cleanup error:", dmDeleteError);
+
     await sendSocialUpdate(row.user_a_id);
     await sendSocialUpdate(row.user_b_id);
     res.json({ok:true});
@@ -991,17 +1010,29 @@ app.delete("/api/friends/:id", requireAccount, async (req,res)=>{
 app.get("/api/dms", requireAccount, async (req,res)=>{
   try {
     const id=req.account.id;
+
+    // DM list = accepted friends only. This prevents stale conversations
+    // from appearing after a restart or after a friendship was removed.
+    const friendData = await getFriendData(id);
+    const acceptedIds = new Set(friendData.friends.map(f => f.other.id));
+
     const {data: rows,error}=await supabase.from("dm_conversations")
       .select("id,user_a_id,user_b_id,created_at")
       .or(`user_a_id.eq.${id},user_b_id.eq.${id}`)
       .order("created_at",{ascending:false});
     if(error) throw error;
-    const otherIds=(rows||[]).map(r=>r.user_a_id===id?r.user_b_id:r.user_a_id);
+
+    const validRows = (rows || []).filter(r => {
+      const otherId = r.user_a_id === id ? r.user_b_id : r.user_a_id;
+      return acceptedIds.has(otherId);
+    });
+
+    const otherIds=validRows.map(r=>r.user_a_id===id?r.user_b_id:r.user_a_id);
     const accounts=otherIds.length ? (await supabase.from("accounts")
       .select("id,username,display_name,avatar_url").in("id",otherIds)).data||[] : [];
     const byId=Object.fromEntries(accounts.map(a=>[a.id,a]));
     const result=[];
-    for(const row of rows||[]){
+    for(const row of validRows){
       const otherId=row.user_a_id===id?row.user_b_id:row.user_a_id;
       const {data:last}=await supabase.from("dm_messages").select("content,created_at")
         .eq("conversation_id",row.id).order("created_at",{ascending:false}).limit(1).maybeSingle();

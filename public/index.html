@@ -492,14 +492,11 @@ function renderFriends() {
         reject.onclick=()=>friendAction(`/api/friends/${item.id}/reject`);
         actions.append(accept,reject);
       } else if (item.status==="accepted") {
-        const dmNote=document.createElement("small");
-        dmNote.textContent="DM欄に追加済み";
-        dmNote.style.color="var(--muted)";
         const remove=document.createElement("button");
         remove.className="danger";
         remove.textContent="解除";
         remove.onclick=()=>friendAction(`/api/friends/${item.id}`,"DELETE");
-        actions.append(dmNote,remove);
+        actions.append(remove);
       } else {
         const small2=document.createElement("small"); small2.textContent="申請中"; small2.style.color="var(--muted)";
         actions.append(small2);
