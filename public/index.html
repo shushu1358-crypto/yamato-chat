@@ -347,10 +347,17 @@ function setAccount(data) {
 }
 
 async function api(url, options = {}) {
+  const tabToken = sessionStorage.getItem("yamato_session_token") || "";
+  const headers = {
+    "Content-Type":"application/json",
+    ...(options.headers || {})
+  };
+  if (tabToken) headers.Authorization = `Bearer ${tabToken}`;
+
   const response = await fetch(url, {
     credentials: "same-origin",
     ...options,
-    headers: {"Content-Type":"application/json", ...(options.headers || {})}
+    headers
   });
   const data = await response.json().catch(() => ({ok:false,error:"サーバーから不正な応答が返りました"}));
   if (!response.ok) throw new Error(data.error || "処理に失敗しました");
@@ -360,6 +367,7 @@ async function api(url, options = {}) {
 async function checkSession() {
   // Always require an explicit login when the page is opened.
   // The existing server session is not automatically restored in the browser.
+  sessionStorage.removeItem("yamato_session_token");
   account = null;
   if (ws) {
     try { ws.close(); } catch {}
@@ -381,6 +389,8 @@ async function login(e) {
         gatePassword:$("loginGate").value
       })
     });
+    if (!data.sessionToken) throw new Error("セッションを作成できませんでした");
+    sessionStorage.setItem("yamato_session_token", data.sessionToken);
     setAccount(data.account);
     setAuthVisible(false);
     $("loginForm").reset();
@@ -405,6 +415,8 @@ async function register(e) {
         bio:$("regBio").value.trim()
       })
     });
+    if (!data.sessionToken) throw new Error("セッションを作成できませんでした");
+    sessionStorage.setItem("yamato_session_token", data.sessionToken);
     setAccount(data.account);
     setAuthVisible(false);
     $("registerForm").reset();
@@ -546,7 +558,13 @@ function connect() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
   const protocol = location.protocol === "https:" ? "wss:" : "ws:";
-  ws = new WebSocket(`${protocol}//${location.host}`);
+  const tabToken = sessionStorage.getItem("yamato_session_token") || "";
+  if (!tabToken) {
+    setAuthVisible(true);
+    showLogin();
+    return;
+  }
+  ws = new WebSocket(`${protocol}//${location.host}?session=${encodeURIComponent(tabToken)}`);
 
   ws.onopen = () => {
     $("messages").dataset.connected = "1";

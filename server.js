@@ -134,9 +134,7 @@ async function getAccountBySessionToken(token) {
 }
 
 async function createSession(accountId) {
-  // Remove old sessions for this account when creating a fresh login.
-  await supabase.from("sessions").delete().eq("account_id", accountId);
-
+  // Keep multiple active sessions. Each browser tab has its own token.
   const raw = newSessionToken();
   const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
 
@@ -150,8 +148,14 @@ async function createSession(accountId) {
   return raw;
 }
 
+function getRequestSessionToken(req) {
+  const auth = String(req.headers.authorization || "");
+  if (auth.startsWith("Bearer ")) return auth.slice(7).trim();
+  return parseCookies(req).yamato_session || "";
+}
+
 async function requireAccount(req, res, next) {
-  const token = parseCookies(req).yamato_session;
+  const token = getRequestSessionToken(req);
   const account = await getAccountBySessionToken(token);
   if (!account) {
     return res.status(401).json({ ok: false, error: "ログインが必要です" });
@@ -224,7 +228,7 @@ app.post("/api/register", async (req, res) => {
     const token = await createSession(account.id);
     setSessionCookie(res, token);
 
-    res.json({ ok: true, account });
+    res.json({ ok: true, account, sessionToken: token });
   } catch (error) {
     console.error("Register error:", error);
     res.status(500).json({ ok: false, error: "登録に失敗しました" });
@@ -275,7 +279,7 @@ app.post("/api/login", async (req, res) => {
 
     delete account.password_hash;
 
-    res.json({ ok: true, account });
+    res.json({ ok: true, account, sessionToken: token });
   } catch (error) {
     console.error("Login error:", error);
     res.status(500).json({ ok: false, error: "ログインに失敗しました" });
@@ -288,7 +292,7 @@ app.get("/api/me", requireAccount, async (req, res) => {
 
 app.post("/api/logout", async (req, res) => {
   try {
-    const token = parseCookies(req).yamato_session;
+    const token = getRequestSessionToken(req);
     if (token) {
       await supabase.from("sessions").delete().eq("token_hash", hashToken(token));
     }
@@ -1030,7 +1034,12 @@ app.post("/api/dms/open", requireAccount, async (req,res)=>{
 });
 
 wss.on("connection", async (ws, req) => {
-  const token = parseCookies(req).yamato_session;
+  let token = parseCookies(req).yamato_session;
+  try {
+    const url = new URL(req.url || "/", "http://localhost");
+    const tabToken = url.searchParams.get("session");
+    if (tabToken) token = tabToken;
+  } catch {}
   const account = await getAccountBySessionToken(token);
 
   if (!account) {
