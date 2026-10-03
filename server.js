@@ -577,6 +577,7 @@ async function getHistory(channelKey) {
       attachment_name,
       attachment_type,
       attachment_size,
+      attachments,
       chat_users(username, display_name, avatar_url)
     `)
     .eq("channel_id", channelId)
@@ -596,6 +597,14 @@ async function getHistory(channelKey) {
     text: row.content,
     time: row.created_at,
     editedAt: row.edited_at || null,
+    attachments: Array.isArray(row.attachments) ? row.attachments : (
+      row.attachment_url ? [{
+        url: row.attachment_url,
+        name: row.attachment_name || "file",
+        type: row.attachment_type || "application/octet-stream",
+        size: row.attachment_size || 0
+      }] : []
+    ),
     attachment: row.attachment_url ? {
       url: row.attachment_url,
       name: row.attachment_name || "file",
@@ -719,29 +728,39 @@ wss.on("connection", async (ws, req) => {
       const text = String(data.text || "").trim().slice(0, 2000);
       const channel = user.channel;
       const channelId = channels[channel]?.id;
-      const attachment = data.attachment && typeof data.attachment === "object"
-        ? data.attachment
-        : null;
+      const rawAttachments = Array.isArray(data.attachments)
+        ? data.attachments.slice(0, 10)
+        : (data.attachment && typeof data.attachment === "object" ? [data.attachment] : []);
 
-      if ((!text && !attachment) || !channelId) return;
+      const attachments = rawAttachments
+        .filter(a => a && a.url)
+        .map(a => ({
+          url: String(a.url).slice(0, 2000),
+          name: safeFileName(a.name).slice(0, 120),
+          type: String(a.type || "application/octet-stream").slice(0, 150),
+          size: Math.max(0, Number(a.size) || 0)
+        }));
+
+      if ((!text && attachments.length === 0) || !channelId) return;
 
       const insertRow = {
         channel_id: channelId,
         user_id: user.dbUserId,
-        content: text
+        content: text,
+        attachments
       };
 
-      if (attachment?.url) {
-        insertRow.attachment_url = String(attachment.url).slice(0, 2000);
-        insertRow.attachment_name = safeFileName(attachment.name).slice(0, 120);
-        insertRow.attachment_type = String(attachment.type || "application/octet-stream").slice(0, 150);
-        insertRow.attachment_size = Math.max(0, Number(attachment.size) || 0);
+      if (attachments[0]) {
+        insertRow.attachment_url = attachments[0].url;
+        insertRow.attachment_name = attachments[0].name;
+        insertRow.attachment_type = attachments[0].type;
+        insertRow.attachment_size = attachments[0].size;
       }
 
       const { data: saved, error } = await supabase
         .from("messages")
         .insert(insertRow)
-        .select("id, content, created_at, edited_at, user_id, attachment_url, attachment_name, attachment_type, attachment_size")
+        .select("id, content, created_at, edited_at, user_id, attachment_url, attachment_name, attachment_type, attachment_size, attachments")
         .single();
 
       if (error) {
@@ -758,6 +777,14 @@ wss.on("connection", async (ws, req) => {
         text: saved.content,
         time: saved.created_at,
         editedAt: saved.edited_at || null,
+        attachments: Array.isArray(saved.attachments) ? saved.attachments : (
+          saved.attachment_url ? [{
+            url: saved.attachment_url,
+            name: saved.attachment_name || "file",
+            type: saved.attachment_type || "application/octet-stream",
+            size: saved.attachment_size || 0
+          }] : []
+        ),
         attachment: saved.attachment_url ? {
           url: saved.attachment_url,
           name: saved.attachment_name || "file",

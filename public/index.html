@@ -35,6 +35,9 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .message-action:hover{background:#3a3f4d;color:#fff}
 .message-action.delete:hover{background:#a83d45}
 .edited{font-size:10px;color:var(--muted);margin-left:4px}
+.attachments-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:7px;max-width:700px}
+.attachments-grid .attachment{min-width:0}
+.attachments-grid .attachment-image{max-width:100%;width:auto;max-height:360px}
 
 .message .avatar{width:36px;height:36px}
 .msgbody{min-width:0}.msghead{display:flex;gap:8px;align-items:baseline}
@@ -94,15 +97,18 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .attachment-file-info{min-width:0;flex:1}
 .attachment-file-info .attachment-name{font-weight:600}
 .attachment-meta{font-size:11px;color:var(--muted);margin-top:3px}
-.pending-attachment{display:none;align-items:flex-start;gap:10px;margin:0 0 8px;padding:8px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;max-width:520px}
-.pending-attachment.show{display:flex}
-.pending-attachment .pending-preview{display:none;width:88px;height:66px;border-radius:6px;object-fit:cover;background:#11131a;flex:0 0 auto}
-.pending-attachment.image-pending .pending-preview{display:block}
-.pending-attachment .pending-info{min-width:0;flex:1;padding-top:2px}
-.pending-attachment .pending-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
-.pending-attachment button{width:28px;height:28px;padding:0;background:var(--hover);border:0;border-radius:6px;color:white;cursor:pointer}
-
+.pending-attachment{display:none;position:relative;margin:0 0 8px;padding:10px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;max-height:430px;overflow:auto}
+.pending-attachment.show{display:block}
+.pending-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;padding-right:2px}
+.pending-card{position:relative;min-width:0;background:#151820;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.pending-card img,.pending-file{display:block;width:100%;height:120px;object-fit:cover;background:#11131a}
+.pending-file{display:grid!important;place-items:center;font-size:38px}
+.pending-card-info{padding:7px 8px}
+.pending-card-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pending-card-size{font-size:10px;color:var(--muted);margin-top:2px}
+.pending-card-remove{position:absolute;right:6px;top:6px;width:25px;height:25px;border:0;border-radius:50%;background:rgba(0,0,0,.72);color:#fff;cursor:pointer;font-size:16px;z-index:2}
+.pending-summary{margin-top:8px;color:var(--muted);font-size:11px}
+.pending-remove{position:absolute;right:10px;top:10px;width:30px;height:30px;padding:0;background:rgba(20,22,28,.9);border:0;border-radius:50%;color:white;cursor:pointer;font-size:18px;z-index:5}
 @media(max-width:800px){.app{grid-template-columns:170px 1fr}.members{display:none}}
 @media(max-width:560px){.app{grid-template-columns:1fr}.sidebar{display:none}.messages{padding:14px}.attachment{width:100%}.attachment-image{max-height:260px}}
 </style>
@@ -186,15 +192,12 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
     <div id="messages" class="messages"></div>
     <div class="composer">
       <div id="pendingAttachment" class="pending-attachment">
-        <img id="pendingAttachmentPreview" class="pending-preview" alt="">
-        <div class="pending-info">
-          <div id="pendingAttachmentName" class="pending-name"></div>
-          <div id="pendingAttachmentSize" class="attachment-meta"></div>
-        </div>
-        <button type="button" id="clearAttachment" title="添付を取り消す">×</button>
+        <div id="pendingAttachmentGrid" class="pending-grid"></div>
+        <div id="pendingAttachmentSummary" class="pending-summary"></div>
+        <button type="button" id="clearAttachment" class="pending-remove" title="添付をすべて取り消す">×</button>
       </div>
       <form id="messageForm">
-        <input type="file" id="fileInput" hidden>
+        <input type="file" id="fileInput" hidden multiple>
         <button type="button" class="attach-btn" id="attachButton" title="画像・ファイルを添付">＋</button>
         <input id="messageInput" maxlength="2000" placeholder="# general にメッセージを送信" autocomplete="off">
         <button type="submit" class="send-btn">送信</button>
@@ -589,81 +592,70 @@ function appendMessage(m) {
     body.appendChild(text);
   }
 
-  if (m.attachment?.url) {
-    const attachment = document.createElement("div");
-    attachment.className = "attachment";
+  const attachments = Array.isArray(m.attachments) && m.attachments.length
+    ? m.attachments
+    : (m.attachment?.url ? [m.attachment] : []);
 
-    const type = String(m.attachment.type || "application/octet-stream");
-    const name = m.attachment.name || "ファイル";
-    const isImage = type.startsWith("image/");
+  if (attachments.length) {
+    const attachmentWrap = document.createElement("div");
+    attachmentWrap.className = "attachments-grid";
 
-    if (isImage) {
-      const img = document.createElement("img");
-      img.src = m.attachment.url;
-      img.alt = name;
-      img.loading = "lazy";
-      img.className = "attachment-image";
-      attachment.appendChild(img);
+    attachments.forEach(att => {
+      if (!att?.url) return;
+      const attachment = document.createElement("div");
+      attachment.className = "attachment";
+      const type = String(att.type || "application/octet-stream");
+      const name = att.name || "ファイル";
 
-      const actions = document.createElement("div");
-      actions.className = "attachment-actions";
+      if (type.startsWith("image/")) {
+        const img = document.createElement("img");
+        img.src = att.url;
+        img.alt = name;
+        img.loading = "lazy";
+        img.className = "attachment-image";
+        attachment.appendChild(img);
 
-      const info = document.createElement("div");
-      info.style.minWidth = "0";
-      info.style.flex = "1";
+        const actions = document.createElement("div");
+        actions.className = "attachment-actions";
+        const label = document.createElement("div");
+        label.className = "attachment-name";
+        label.textContent = name;
+        const view = document.createElement("a");
+        view.className = "attachment-action";
+        view.href = att.url;
+        view.target = "_blank";
+        view.rel = "noopener";
+        view.textContent = "表示";
+        actions.append(label,view);
+        attachment.appendChild(actions);
+      } else {
+        const row = document.createElement("div");
+        row.className = "attachment-file";
+        const icon = document.createElement("div");
+        icon.className = "attachment-file-icon";
+        icon.textContent = "📄";
+        const info = document.createElement("div");
+        info.className = "attachment-file-info";
+        const label = document.createElement("div");
+        label.className = "attachment-name";
+        label.textContent = name;
+        const meta = document.createElement("div");
+        meta.className = "attachment-meta";
+        meta.textContent = formatBytes(att.size);
+        info.append(label,meta);
+        const download = document.createElement("button");
+        download.type = "button";
+        download.className = "attachment-download";
+        download.textContent = "↓";
+        download.title = "ダウンロード";
+        download.addEventListener("click", () => downloadAttachment(att.url,name));
+        row.append(icon,info,download);
+        attachment.appendChild(row);
+      }
+      attachmentWrap.appendChild(attachment);
+    });
 
-      const label = document.createElement("div");
-      label.className = "attachment-name";
-      label.textContent = name;
-
-      const size = document.createElement("div");
-      size.className = "attachment-meta";
-      size.textContent = formatBytes(m.attachment.size);
-
-      info.append(label,size);
-
-      const view = document.createElement("a");
-      view.className = "attachment-action";
-      view.href = m.attachment.url;
-      view.target = "_blank";
-      view.rel = "noopener";
-      view.textContent = "表示";
-
-      actions.append(info,view);
-      attachment.appendChild(actions);
-    } else {
-      const row = document.createElement("div");
-      row.className = "attachment-file";
-
-      const icon = document.createElement("div");
-      icon.className = "attachment-file-icon";
-      icon.textContent = "📄";
-
-      const info = document.createElement("div");
-      info.className = "attachment-file-info";
-
-      const label = document.createElement("div");
-      label.className = "attachment-name";
-      label.textContent = name;
-
-      const meta = document.createElement("div");
-      meta.className = "attachment-meta";
-      meta.textContent = formatBytes(m.attachment.size);
-
-      info.append(label,meta);
-
-      const download = document.createElement("button");
-      download.type = "button";
-      download.className = "attachment-download";
-      download.textContent = "↓";
-      download.title = "ダウンロード";
-      download.addEventListener("click", () => downloadAttachment(m.attachment.url,name));
-
-      row.append(icon,info,download);
-      attachment.appendChild(row);
-    }
-
-    body.appendChild(attachment);
+    body.appendChild(attachmentWrap);
   }
 
   wrap.append(avatar,body);
@@ -787,108 +779,124 @@ async function uploadChatFile(file) {
   return data.file;
 }
 
-let pendingFile = null;
+let pendingFiles = [];
+let pendingPreviewUrls = [];
 
-let pendingPreviewUrl = null;
+function setPendingFiles(files) {
+  pendingPreviewUrls.forEach(url => URL.revokeObjectURL(url));
+  pendingPreviewUrls = [];
 
-function setPendingFile(file) {
-  if (pendingPreviewUrl) {
-    URL.revokeObjectURL(pendingPreviewUrl);
-    pendingPreviewUrl = null;
-  }
+  pendingFiles = Array.from(files || []).slice(0, 10);
 
-  pendingFile = file || null;
   const box = $("pendingAttachment");
-  const name = $("pendingAttachmentName");
-  const size = $("pendingAttachmentSize");
-  const preview = $("pendingAttachmentPreview");
+  const grid = $("pendingAttachmentGrid");
+  const summary = $("pendingAttachmentSummary");
+  grid.innerHTML = "";
 
-  box.classList.remove("image-pending");
-
-  if (pendingFile) {
-    name.textContent = pendingFile.name || "貼り付けファイル";
-    size.textContent = formatBytes(pendingFile.size);
-
-    if (pendingFile.type && pendingFile.type.startsWith("image/")) {
-      pendingPreviewUrl = URL.createObjectURL(pendingFile);
-      preview.src = pendingPreviewUrl;
-      preview.alt = pendingFile.name || "画像";
-      box.classList.add("image-pending");
-    } else {
-      preview.removeAttribute("src");
-      preview.alt = "";
-    }
-    box.classList.add("show");
-  } else {
-    name.textContent = "";
-    size.textContent = "";
-    preview.removeAttribute("src");
-    preview.alt = "";
+  if (!pendingFiles.length) {
+    summary.textContent = "";
     box.classList.remove("show");
     $("fileInput").value = "";
+    return;
   }
+
+  pendingFiles.forEach((file, index) => {
+    const card = document.createElement("div");
+    card.className = "pending-card";
+
+    if (file.type && file.type.startsWith("image/")) {
+      const url = URL.createObjectURL(file);
+      pendingPreviewUrls.push(url);
+      const img = document.createElement("img");
+      img.src = url;
+      img.alt = file.name || "画像";
+      card.appendChild(img);
+    } else {
+      const icon = document.createElement("div");
+      icon.className = "pending-file";
+      icon.textContent = "📄";
+      card.appendChild(icon);
+    }
+
+    const info = document.createElement("div");
+    info.className = "pending-card-info";
+
+    const name = document.createElement("div");
+    name.className = "pending-card-name";
+    name.textContent = file.name || "ファイル";
+
+    const size = document.createElement("div");
+    size.className = "pending-card-size";
+    size.textContent = formatBytes(file.size);
+
+    info.append(name, size);
+    card.appendChild(info);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "pending-card-remove";
+    remove.textContent = "×";
+    remove.title = "このファイルを外す";
+    remove.addEventListener("click", () => {
+      setPendingFiles(pendingFiles.filter((_, i) => i !== index));
+    });
+    card.appendChild(remove);
+
+    grid.appendChild(card);
+  });
+
+  const total = pendingFiles.reduce((sum, file) => sum + (file.size || 0), 0);
+  summary.textContent = `${pendingFiles.length}/10個を添付 · 合計 ${formatBytes(total)}`;
+  box.classList.add("show");
 }
 
 $("attachButton").addEventListener("click", () => $("fileInput").click());
 
 $("fileInput").addEventListener("change", () => {
-  const file = $("fileInput").files[0] || null;
-  setPendingFile(file);
+  const selected = Array.from($("fileInput").files || []);
+  if (selected.length > 10) alert("添付できるファイルは最大10個です。先頭10個を使用します。");
+  setPendingFiles(selected.slice(0, 10));
 });
 
-$("clearAttachment").addEventListener("click", () => setPendingFile(null));
+$("clearAttachment").addEventListener("click", () => setPendingFiles([]));
 
-// Ctrl+V / right-click paste: if the clipboard contains an image/file,
-// turn it into the same pending attachment used by the + button.
 $("messageInput").addEventListener("paste", e => {
-  const items = Array.from(e.clipboardData?.items || []);
-  const fileItem = items.find(item => item.kind === "file");
-  if (!fileItem) return;
+  const pastedFiles = Array.from(e.clipboardData?.items || [])
+    .filter(item => item.kind === "file")
+    .map(item => item.getAsFile())
+    .filter(Boolean);
 
-  const file = fileItem.getAsFile();
-  if (!file) return;
+  if (!pastedFiles.length) return;
 
   e.preventDefault();
-  const ext = file.type === "image/png" ? ".png"
-    : file.type === "image/jpeg" ? ".jpg"
-    : file.type === "image/gif" ? ".gif"
-    : file.type === "image/webp" ? ".webp" : "";
-  const namedFile = new File([file], file.name || `pasted-image${ext}`, {
-    type: file.type || "application/octet-stream",
-    lastModified: Date.now()
-  });
-  setPendingFile(namedFile);
+  if (pendingFiles.length + pastedFiles.length > 10) {
+    alert("添付できるファイルは最大10個です。");
+  }
+  setPendingFiles([...pendingFiles, ...pastedFiles].slice(0, 10));
 });
 
-// Some browsers expose pasted files on the clipboard as DataTransfer files.
-$("messageInput").addEventListener("drop", e => {
-  const file = e.dataTransfer?.files?.[0];
-  if (!file) return;
-  e.preventDefault();
-  setPendingFile(file);
-});
 
 $("messageForm").addEventListener("submit", async e => {
   e.preventDefault();
   const text = $("messageInput").value.trim();
-  const file = pendingFile;
+  const files = [...pendingFiles];
 
-  if ((!text && !file) || !ws || ws.readyState !== WebSocket.OPEN) return;
+  if ((!text && !files.length) || !ws || ws.readyState !== WebSocket.OPEN) return;
 
   const sendButton = $("messageForm").querySelector(".send-btn");
   sendButton.disabled = true;
 
   try {
-    let attachment = null;
-    if (file) {
-      $("fileStatus").textContent = `アップロード中: ${file.name || "貼り付けファイル"}`;
-      attachment = await uploadChatFile(file);
+    const attachments = [];
+    for (let i = 0; i < files.length; i++) {
+      $("fileStatus").textContent = `アップロード中: ${i + 1}/${files.length} ${files[i].name || "ファイル"}`;
+      attachments.push(await uploadChatFile(files[i]));
     }
 
-    ws.send(JSON.stringify({type:"message", text, attachment}));
+    ws.send(JSON.stringify({type:"message", text, attachments}));
     $("messageInput").value = "";
     $("fileStatus").textContent = "";
-    setPendingFile(null);
+    setPendingFiles([]);
   } catch (err) {
     alert(err.message);
   } finally {
