@@ -774,8 +774,6 @@ wss.on("connection", async (ws, req) => {
         }
       }
     }
-  });
-
 
     if (data.type === "edit_message") {
       const messageId = String(data.messageId || "").trim();
@@ -860,6 +858,7 @@ wss.on("connection", async (ws, req) => {
       }
       return;
     }
+  });
 
   ws.on("close", () => {
     const oldName = user.name;

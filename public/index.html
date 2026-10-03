@@ -288,6 +288,11 @@ async function api(url, options = {}) {
     ...options,
     headers: {"Content-Type":"application/json", ...(options.headers || {})}
   });
+  const contentType = response.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    const raw = await response.text();
+    throw new Error(response.ok ? "サーバーから不正な応答が返りました" : `サーバーエラー (${response.status})`);
+  }
   const data = await response.json().catch(() => ({ok:false,error:"サーバーから不正な応答が返りました"}));
   if (!response.ok) throw new Error(data.error || "処理に失敗しました");
   return data;
