@@ -31,7 +31,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .messages{flex:1;min-height:0;overflow:auto;padding:18px 22px}
 .message{display:flex;gap:11px;margin:0 0 16px}
 .message:hover .message-actions{opacity:1;pointer-events:auto}
-.message-actions{display:inline-flex;gap:4px;margin-left:6px;opacity:0;pointer-events:none;vertical-align:middle;transition:opacity .12s}
+.message-actions{display:inline-flex;gap:4px;margin-left:6px;opacity:0;pointer-events:none;transition:opacity .12s}
 .message-action{border:0;background:#2a2e39;color:#cbd1df;border-radius:5px;width:25px;height:23px;cursor:pointer;font-size:13px;display:grid;place-items:center;padding:0}
 .message-action:hover{background:#3a3f4d;color:#fff}
 .message-action.delete:hover{background:#a83d45}
@@ -86,7 +86,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .file-row{display:flex;gap:8px;align-items:center}
 .attach-btn{width:42px;border:0;border-radius:7px;background:var(--hover);color:white;cursor:pointer;font-size:20px}
 .attachment{margin-top:8px;width:min(460px,calc(100vw - 90px));max-width:100%;box-sizing:border-box;background:#1f222b;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-.attachment-image{display:block;width:auto;max-width:100%;max-height:300px;height:auto;object-fit:contain;background:#11131a}
+.attachment-image{display:block;width:auto;max-width:min(100%,520px);max-height:360px;height:auto;object-fit:contain;background:#11131a;border-radius:7px}
 .attachment-actions{display:flex;align-items:center;gap:10px;padding:7px 9px}
 .attachment-name{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
 .attachment-action,.attachment-download{border:0;background:var(--hover);color:#dbe5ff;text-decoration:none;border-radius:6px;padding:6px 9px;cursor:pointer;white-space:nowrap}
@@ -95,9 +95,13 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .attachment-file-info{min-width:0;flex:1}
 .attachment-file-info .attachment-name{font-weight:600}
 .attachment-meta{font-size:11px;color:var(--muted);margin-top:3px}
-.pending-attachment{display:none;align-items:center;gap:9px;margin:0 0 8px;padding:8px 10px;background:var(--panel2);border:1px solid var(--line);border-radius:8px}
+.pending-attachment{display:none;align-items:flex-start;gap:10px;margin:0 0 8px;padding:8px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;max-width:520px}
 .pending-attachment.show{display:flex}
-.pending-attachment .pending-name{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pending-attachment .pending-preview{display:none;width:88px;height:66px;border-radius:6px;object-fit:cover;background:#11131a;flex:0 0 auto}
+.pending-attachment.image-pending .pending-preview{display:block}
+.pending-attachment .pending-info{min-width:0;flex:1;padding-top:2px}
+.pending-attachment .pending-name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
 .pending-attachment button{width:28px;height:28px;padding:0;background:var(--hover);border:0;border-radius:6px;color:white;cursor:pointer}
 
 @media(max-width:800px){.app{grid-template-columns:170px 1fr}.members{display:none}}
@@ -183,8 +187,11 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
     <div id="messages" class="messages"></div>
     <div class="composer">
       <div id="pendingAttachment" class="pending-attachment">
-        <span>📎</span>
-        <span id="pendingAttachmentName" class="pending-name"></span>
+        <img id="pendingAttachmentPreview" class="pending-preview" alt="">
+        <div class="pending-info">
+          <div id="pendingAttachmentName" class="pending-name"></div>
+          <div id="pendingAttachmentSize" class="attachment-meta"></div>
+        </div>
         <button type="button" id="clearAttachment" title="添付を取り消す">×</button>
       </div>
       <form id="messageForm">
@@ -288,11 +295,6 @@ async function api(url, options = {}) {
     ...options,
     headers: {"Content-Type":"application/json", ...(options.headers || {})}
   });
-  const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("application/json")) {
-    const raw = await response.text();
-    throw new Error(response.ok ? "サーバーから不正な応答が返りました" : `サーバーエラー (${response.status})`);
-  }
   const data = await response.json().catch(() => ({ok:false,error:"サーバーから不正な応答が返りました"}));
   if (!response.ok) throw new Error(data.error || "処理に失敗しました");
   return data;
@@ -397,6 +399,7 @@ function connect() {
           username:data.account.username,
           display_name:data.account.displayName,
           bio:data.account.bio,
+          chatUserId:data.account.chatUserId,
           avatar_url:data.account.avatarUrl
         });
       }
@@ -477,35 +480,27 @@ function updateMessageInDom(messageId, textValue, editedAt) {
   const wrap = document.querySelector(`.message[data-message-id="${CSS.escape(messageId)}"]`);
   if (!wrap) return;
 
-  let text = wrap.querySelector(".text");
-  if (textValue) {
-    if (!text) {
-      text = document.createElement("div");
-      text.className = "text";
-      const body = wrap.querySelector(".msgbody");
-      const head = wrap.querySelector(".msghead");
-      body.insertBefore(text, head.nextSibling);
-    }
-    text.textContent = textValue;
-  } else if (text) {
-    text.remove();
+  const text = wrap.querySelector(".text");
+  if (text) text.textContent = textValue;
+  else if (textValue) {
+    const t = document.createElement("div");
+    t.className = "text";
+    t.textContent = textValue;
+    wrap.querySelector(".msgbody").appendChild(t);
   }
 
-  const head = wrap.querySelector(".msghead");
-  let edited = head.querySelector(".edited");
+  let edited = wrap.querySelector(".edited");
   if (!edited) {
     edited = document.createElement("span");
     edited.className = "edited";
-    head.appendChild(edited);
+    wrap.querySelector(".msghead").appendChild(edited);
   }
   edited.textContent = "(編集済み)";
 }
 
 function removeMessageFromDom(messageId) {
   const wrap = document.querySelector(`.message[data-message-id="${CSS.escape(messageId)}"]`);
-  if (wrap) {
-    wrap.remove();
-  }
+  if (wrap) wrap.remove();
 }
 
 function editOwnMessage(messageId, currentText) {
@@ -513,14 +508,16 @@ function editOwnMessage(messageId, currentText) {
   if (value === null) return;
   const text = value.trim();
   if (!text || text === currentText) return;
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({type:"edit_message", messageId, text}));
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type:"edit_message", messageId, text}));
+  }
 }
 
 function deleteOwnMessage(messageId) {
   if (!window.confirm("このメッセージを削除しますか？")) return;
-  if (!ws || ws.readyState !== WebSocket.OPEN) return;
-  ws.send(JSON.stringify({type:"delete_message", messageId}));
+  if (ws?.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({type:"delete_message", messageId}));
+  }
 }
 
 function appendMessage(m) {
@@ -545,12 +542,10 @@ function appendMessage(m) {
   time.className = "time";
   time.textContent = new Date(m.time).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
 
-  head.append(name, time);
+  head.append(name,time);
 
-  const isMine = !!account && m.userId && account.id && String(m.userId) === String(account.chatUserId);
-  // The server sends the DB chat-user id as userId; if account doesn't have it,
-  // fall back to the current account's username/display-name match for own messages.
-  const own = isMine || (!!account && account.chatUserId && m.userId && String(m.userId) === String(account.chatUserId));
+  const own = !!account?.chatUserId && !!m.userId &&
+    String(account.chatUserId) === String(m.userId);
 
   if (own && m.id) {
     const actions = document.createElement("span");
@@ -570,7 +565,7 @@ function appendMessage(m) {
     del.textContent = "🗑";
     del.addEventListener("click", () => deleteOwnMessage(m.id));
 
-    actions.append(edit, del);
+    actions.append(edit,del);
     head.appendChild(actions);
   }
 
@@ -580,6 +575,8 @@ function appendMessage(m) {
     edited.textContent = "(編集済み)";
     head.appendChild(edited);
   }
+
+  body.appendChild(head);
 
   if (m.text) {
     const text = document.createElement("div");
@@ -606,6 +603,7 @@ function appendMessage(m) {
 
       const actions = document.createElement("div");
       actions.className = "attachment-actions";
+
       const info = document.createElement("div");
       info.style.minWidth = "0";
       info.style.flex = "1";
@@ -618,7 +616,7 @@ function appendMessage(m) {
       size.className = "attachment-meta";
       size.textContent = formatBytes(m.attachment.size);
 
-      info.append(label, size);
+      info.append(label,size);
 
       const view = document.createElement("a");
       view.className = "attachment-action";
@@ -627,7 +625,7 @@ function appendMessage(m) {
       view.rel = "noopener";
       view.textContent = "表示";
 
-      actions.append(info, view);
+      actions.append(info,view);
       attachment.appendChild(actions);
     } else {
       const row = document.createElement("div");
@@ -647,24 +645,24 @@ function appendMessage(m) {
       const meta = document.createElement("div");
       meta.className = "attachment-meta";
       meta.textContent = formatBytes(m.attachment.size);
-      info.append(label, meta);
+
+      info.append(label,meta);
 
       const download = document.createElement("button");
       download.type = "button";
       download.className = "attachment-download";
       download.textContent = "↓";
       download.title = "ダウンロード";
-      download.addEventListener("click", () => downloadAttachment(m.attachment.url, name));
+      download.addEventListener("click", () => downloadAttachment(m.attachment.url,name));
 
-      row.append(icon, info, download);
+      row.append(icon,info,download);
       attachment.appendChild(row);
     }
 
     body.appendChild(attachment);
   }
 
-  body.prepend(head);
-  wrap.append(avatar, body);
+  wrap.append(avatar,body);
   messages.appendChild(wrap);
   messages.scrollTop = messages.scrollHeight;
 }
@@ -787,15 +785,41 @@ async function uploadChatFile(file) {
 
 let pendingFile = null;
 
+let pendingPreviewUrl = null;
+
 function setPendingFile(file) {
+  if (pendingPreviewUrl) {
+    URL.revokeObjectURL(pendingPreviewUrl);
+    pendingPreviewUrl = null;
+  }
+
   pendingFile = file || null;
   const box = $("pendingAttachment");
   const name = $("pendingAttachmentName");
+  const size = $("pendingAttachmentSize");
+  const preview = $("pendingAttachmentPreview");
+
+  box.classList.remove("image-pending");
+
   if (pendingFile) {
-    name.textContent = `${pendingFile.name || "貼り付けファイル"} (${formatBytes(pendingFile.size)})`;
+    name.textContent = pendingFile.name || "貼り付けファイル";
+    size.textContent = formatBytes(pendingFile.size);
+
+    if (pendingFile.type && pendingFile.type.startsWith("image/")) {
+      pendingPreviewUrl = URL.createObjectURL(pendingFile);
+      preview.src = pendingPreviewUrl;
+      preview.alt = pendingFile.name || "画像";
+      box.classList.add("image-pending");
+    } else {
+      preview.removeAttribute("src");
+      preview.alt = "";
+    }
     box.classList.add("show");
   } else {
     name.textContent = "";
+    size.textContent = "";
+    preview.removeAttribute("src");
+    preview.alt = "";
     box.classList.remove("show");
     $("fileInput").value = "";
   }

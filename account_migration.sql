@@ -110,10 +110,6 @@ set display_name = username
 where coalesce(display_name, '') = '';
 
 
--- V2.4: message editing
+-- V2.4.2: message editing
 alter table public.messages
   add column if not exists edited_at timestamptz;
-
-grant select, insert, update, delete
-on table public.messages
-to service_role;

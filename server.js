@@ -571,7 +571,6 @@ async function getHistory(channelKey) {
       id,
       content,
       created_at,
-      edited_at,
       user_id,
       attachment_url,
       attachment_name,
@@ -695,6 +694,7 @@ wss.on("connection", async (ws, req) => {
     } catch {
       return;
     }
+    if (!data || typeof data !== "object") return;
 
     if (data.type === "join_channel") {
       const channel = String(data.channel || "");
@@ -772,91 +772,96 @@ wss.on("connection", async (ws, req) => {
             message
           }));
         }
+
       }
-    }
 
-    if (data.type === "edit_message") {
-      const messageId = String(data.messageId || "").trim();
-      const newText = String(data.text || "").trim().slice(0, 2000);
-      if (!messageId || !newText) return;
+      if (data.type === "edit_message") {
+        const messageId = String(data.messageId || "").trim();
+        const newText = String(data.text || "").trim().slice(0, 2000);
+        if (!messageId || !newText) return;
 
-      const { data: target, error: findError } = await supabase
-        .from("messages")
-        .select("id, channel_id, user_id, content, edited_at")
-        .eq("id", messageId)
-        .maybeSingle();
+        const channelId = channels[user.channel]?.id;
+        if (!channelId || !user.dbUserId) return;
 
-      if (findError || !target) return;
+        const { data: target, error: findError } = await supabase
+          .from("messages")
+          .select("id, channel_id, user_id")
+          .eq("id", messageId)
+          .maybeSingle();
 
-      // Ownership check: users can only edit their own messages.
-      if (target.user_id !== user.dbUserId || target.channel_id !== channels[user.channel]?.id) return;
+        if (findError || !target) return;
+        if (target.user_id !== user.dbUserId || target.channel_id !== channelId) return;
 
-      const { data: updated, error: updateError } = await supabase
-        .from("messages")
-        .update({
-          content: newText,
-          edited_at: new Date().toISOString()
-        })
-        .eq("id", messageId)
-        .eq("user_id", user.dbUserId)
-        .select("id, content, edited_at")
-        .single();
+        const { data: updated, error: updateError } = await supabase
+          .from("messages")
+          .update({
+            content: newText,
+            edited_at: new Date().toISOString()
+          })
+          .eq("id", messageId)
+          .eq("user_id", user.dbUserId)
+          .eq("channel_id", channelId)
+          .select("id, content, edited_at")
+          .single();
 
-      if (updateError || !updated) {
-        console.error("Message edit error:", updateError);
+        if (updateError || !updated) {
+          console.error("Message edit error:", updateError);
+          return;
+        }
+
+        for (const [client, info] of clients) {
+          if (info.channel === user.channel && client.readyState === 1) {
+            client.send(JSON.stringify({
+              type: "message_edited",
+              channel: user.channel,
+              messageId: updated.id,
+              text: updated.content,
+              editedAt: updated.edited_at
+            }));
+          }
+        }
         return;
       }
 
-      for (const [client, info] of clients) {
-        if (info.channel === user.channel && client.readyState === 1) {
-          client.send(JSON.stringify({
-            type: "message_edited",
-            channel: user.channel,
-            messageId: updated.id,
-            text: updated.content,
-            editedAt: updated.edited_at
-          }));
+      if (data.type === "delete_message") {
+        const messageId = String(data.messageId || "").trim();
+        if (!messageId) return;
+
+        const channelId = channels[user.channel]?.id;
+        if (!channelId || !user.dbUserId) return;
+
+        const { data: target, error: findError } = await supabase
+          .from("messages")
+          .select("id, channel_id, user_id")
+          .eq("id", messageId)
+          .maybeSingle();
+
+        if (findError || !target) return;
+        if (target.user_id !== user.dbUserId || target.channel_id !== channelId) return;
+
+        const { error: deleteError } = await supabase
+          .from("messages")
+          .delete()
+          .eq("id", messageId)
+          .eq("user_id", user.dbUserId)
+          .eq("channel_id", channelId);
+
+        if (deleteError) {
+          console.error("Message delete error:", deleteError);
+          return;
         }
-      }
-      return;
-    }
 
-    if (data.type === "delete_message") {
-      const messageId = String(data.messageId || "").trim();
-      if (!messageId) return;
-
-      const { data: target, error: findError } = await supabase
-        .from("messages")
-        .select("id, channel_id, user_id")
-        .eq("id", messageId)
-        .maybeSingle();
-
-      if (findError || !target) return;
-
-      // Ownership check: users can only delete their own messages.
-      if (target.user_id !== user.dbUserId || target.channel_id !== channels[user.channel]?.id) return;
-
-      const { error: deleteError } = await supabase
-        .from("messages")
-        .delete()
-        .eq("id", messageId)
-        .eq("user_id", user.dbUserId);
-
-      if (deleteError) {
-        console.error("Message delete error:", deleteError);
+        for (const [client, info] of clients) {
+          if (info.channel === user.channel && client.readyState === 1) {
+            client.send(JSON.stringify({
+              type: "message_deleted",
+              channel: user.channel,
+              messageId
+            }));
+          }
+        }
         return;
       }
-
-      for (const [client, info] of clients) {
-        if (info.channel === user.channel && client.readyState === 1) {
-          client.send(JSON.stringify({
-            type: "message_deleted",
-            channel: user.channel,
-            messageId
-          }));
-        }
-      }
-      return;
     }
   });
 
