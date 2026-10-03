@@ -1,6 +1,6 @@
 {
   "name": "yamato-chat",
-  "version": "2.3.2",
+  "version": "2.3.3",
   "private": true,
   "description": "Lightweight Discord-style chat server with Supabase persistence",
   "main": "server.js",

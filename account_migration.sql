@@ -93,3 +93,18 @@ alter table public.chat_users
 grant select, insert, update, delete
 on table public.chat_users
 to service_role;
+
+
+-- V2.3.3: ensure existing chat identities have display names.
+alter table public.chat_users
+  add column if not exists display_name text;
+
+update public.chat_users cu
+set display_name = a.display_name
+from public.accounts a
+where a.username = cu.username
+  and coalesce(cu.display_name, '') = '';
+
+update public.chat_users
+set display_name = username
+where coalesce(display_name, '') = '';
