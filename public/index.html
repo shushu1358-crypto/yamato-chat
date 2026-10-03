@@ -75,7 +75,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 
 <div id="authOverlay" class="overlay">
   <div id="loginCard" class="auth-card">
-    <h1>YDM にログイン</h1>
+    <h1>Yamato Chat にログイン</h1>
     <form id="loginForm">
       <label for="loginUsername">ユーザー名</label>
       <input id="loginUsername" maxlength="24" placeholder="ユーザー名" autocomplete="username" required>
@@ -86,9 +86,9 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
         <button type="button" class="eye" data-target="loginPassword">◉</button>
       </div>
 
-      <label for="loginGate">ゲートパスワード</label>
+      <label for="loginGate">共通ゲートパスワード</label>
       <div class="password-wrap">
-        <input id="loginGate" type="password" maxlength="128" placeholder="チーム共有パスワード" required>
+        <input id="loginGate" type="password" maxlength="128" placeholder="共通共通ゲートパスワード" required>
         <button type="button" class="eye" data-target="loginGate">◉</button>
       </div>
 
@@ -99,7 +99,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
   </div>
 
   <div id="registerCard" class="auth-card hidden">
-    <h1>YDM に新規登録</h1>
+    <h1>Yamato Chat に新規登録</h1>
     <form id="registerForm">
       <label for="regDisplayName">表示名 <b>*</b></label>
       <input id="regDisplayName" maxlength="24" placeholder="チャットで表示される名前" autocomplete="nickname" required>
@@ -113,12 +113,12 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
         <button type="button" class="eye" data-target="regPassword">◉</button>
       </div>
 
-      <label for="regGate">ゲートパスワード</label>
+      <label for="regGate">共通ゲートパスワード</label>
       <div class="password-wrap">
-        <input id="regGate" type="password" maxlength="128" minlength="4" placeholder="チーム共有パスワード" required>
+        <input id="regGate" type="password" maxlength="128" minlength="4" placeholder="共通共通ゲートパスワード" required>
         <button type="button" class="eye" data-target="regGate">◉</button>
       </div>
-      <div class="gate-note">YDMへのアクセスに使う追加パスワードです。</div>
+      <div class="gate-note">全員共通のYamato Chat共通ゲートパスワードです。</div>
 
       <label for="regBio">自己紹介（任意）</label>
       <textarea id="regBio" maxlength="500" placeholder="簡単な自己紹介"></textarea>

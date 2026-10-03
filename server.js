@@ -13,9 +13,10 @@ const wss = new WebSocketServer({ server });
 const PORT = process.env.PORT || 3000;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
+const YAMATO_GATE_PASSWORD = process.env.YAMATO_GATE_PASSWORD;
 
-if (!SUPABASE_URL || !SUPABASE_SECRET_KEY) {
-  console.error("Missing SUPABASE_URL or SUPABASE_SECRET_KEY.");
+if (!SUPABASE_URL || !SUPABASE_SECRET_KEY || !YAMATO_GATE_PASSWORD) {
+  console.error("Missing SUPABASE_URL, SUPABASE_SECRET_KEY, or YAMATO_GATE_PASSWORD.");
   process.exit(1);
 }
 
@@ -183,12 +184,11 @@ app.post("/api/register", async (req, res) => {
     if (!validPassword(password)) {
       return res.status(400).json({ ok: false, error: "パスワードは4〜128文字です" });
     }
-    if (!validPassword(gatePassword)) {
-      return res.status(400).json({ ok: false, error: "ゲートパスワードは4〜128文字です" });
+    if (!verifyGatePassword(gatePassword)) {
+      return res.status(401).json({ ok: false, error: "共通ゲートパスワードが違います" });
     }
 
     const passwordHash = await bcrypt.hash(password, 12);
-    const gatePasswordHash = await bcrypt.hash(gatePassword, 12);
 
     const { data: account, error } = await supabase
       .from("accounts")
@@ -196,7 +196,6 @@ app.post("/api/register", async (req, res) => {
         username,
         display_name: displayName,
         password_hash: passwordHash,
-        gate_password_hash: gatePasswordHash,
         bio
       })
       .select("id, username, display_name, bio, avatar_url, created_at")
@@ -233,7 +232,7 @@ app.post("/api/login", async (req, res) => {
       .from("accounts")
       .select(`
         id, username, display_name, bio, avatar_url, created_at, last_login_at,
-        password_hash, gate_password_hash
+        password_hash
       `)
       .eq("username", username)
       .limit(1)
@@ -247,7 +246,7 @@ app.post("/api/login", async (req, res) => {
     }
 
     const passwordOK = await bcrypt.compare(password, account.password_hash);
-    const gateOK = await bcrypt.compare(gatePassword, account.gate_password_hash);
+    const gateOK = verifyGatePassword(gatePassword);
 
     if (!passwordOK || !gateOK) {
       return res.status(401).json({ ok: false, error: "ユーザー名またはパスワードが違います" });
@@ -262,7 +261,6 @@ app.post("/api/login", async (req, res) => {
     setSessionCookie(res, token);
 
     delete account.password_hash;
-    delete account.gate_password_hash;
 
     res.json({ ok: true, account });
   } catch (error) {
@@ -433,6 +431,13 @@ async function ensureChatUser(account) {
 
   if (error) throw error;
   return data;
+}
+
+
+function verifyGatePassword(input) {
+  return typeof input === "string" &&
+    typeof YAMATO_GATE_PASSWORD === "string" &&
+    input === YAMATO_GATE_PASSWORD;
 }
 
 wss.on("connection", async (ws, req) => {
