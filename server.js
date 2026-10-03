@@ -561,84 +561,61 @@ async function ensureDefaultData() {
   ));
 }
 
-async function getHistory(channelKey) {
+async function getHistory(channelKey, reactionUserId = null) {
   const channelId = channels[channelKey]?.id;
   if (!channelId) return [];
 
   const selectWithAttachments = `
-      id,
-      content,
-      created_at,
-      edited_at,
-      user_id,
-      attachment_url,
-      attachment_name,
-      attachment_type,
-      attachment_size,
-      attachments,
-      chat_users(username, display_name, avatar_url)
+      id, content, created_at, edited_at, user_id,
+      attachment_url, attachment_name, attachment_type, attachment_size,
+      attachments, chat_users(username, display_name, avatar_url)
     `;
-
   const selectLegacy = `
-      id,
-      content,
-      created_at,
-      edited_at,
-      user_id,
-      attachment_url,
-      attachment_name,
-      attachment_type,
-      attachment_size,
+      id, content, created_at, edited_at, user_id,
+      attachment_url, attachment_name, attachment_type, attachment_size,
       chat_users(username, display_name, avatar_url)
     `;
 
   let { data, error } = await supabase
-    .from("messages")
-    .select(selectWithAttachments)
-    .eq("channel_id", channelId)
-    .order("created_at", { ascending: false })
-    .limit(MAX_MESSAGES);
+    .from("messages").select(selectWithAttachments)
+    .eq("channel_id", channelId).order("created_at",{ascending:false}).limit(MAX_MESSAGES);
 
-  // V2.4.5 can be deployed before the optional migration is run.
-  // In that case, fall back to the existing single-attachment schema so
-  // the entire chat history does not disappear.
-  if (error && /attachments|column/i.test(String(error.message || ""))) {
-    console.warn("attachments column is not ready; using legacy message history.");
-    ({ data, error } = await supabase
-      .from("messages")
-      .select(selectLegacy)
-      .eq("channel_id", channelId)
-      .order("created_at", { ascending: false })
-      .limit(MAX_MESSAGES));
+  if (error && /attachments|column/i.test(String(error.message||""))) {
+    ({data,error}=await supabase.from("messages").select(selectLegacy)
+      .eq("channel_id",channelId).order("created_at",{ascending:false}).limit(MAX_MESSAGES));
+  }
+  if(error){ console.error("History load error:",error); return []; }
+
+  const rows=(data||[]).reverse();
+  const ids=rows.map(r=>r.id);
+  const {data: reactionRows}=ids.length
+    ? await supabase.from("reactions").select("message_id,user_id,emoji").in("message_id",ids)
+    : {data:[]};
+  const myChatUserId = reactionUserId;
+  const reactionMap={};
+  for(const r of reactionRows||[]){
+    if(!reactionMap[r.message_id]) reactionMap[r.message_id]=[];
+    let item=reactionMap[r.message_id].find(x=>x.emoji===r.emoji);
+    if(!item){item={emoji:r.emoji,count:0,mine:false};reactionMap[r.message_id].push(item);}
+    item.count++;
+    if(r.user_id===myChatUserId)item.mine=true;
   }
 
-  if (error) {
-    console.error("History load error:", error);
-    return [];
-  }
-
-  return (data || []).reverse().map(row => ({
-    id: row.id,
-    userId: row.user_id,
-    user: row.chat_users?.display_name || row.chat_users?.username || "Unknown",
-    avatarUrl: row.chat_users?.avatar_url || null,
-    text: row.content,
-    time: row.created_at,
-    editedAt: row.edited_at || null,
-    attachments: Array.isArray(row.attachments) ? row.attachments : (
-      row.attachment_url ? [{
-        url: row.attachment_url,
-        name: row.attachment_name || "file",
-        type: row.attachment_type || "application/octet-stream",
-        size: row.attachment_size || 0
-      }] : []
-    ),
-    attachment: row.attachment_url ? {
-      url: row.attachment_url,
-      name: row.attachment_name || "file",
-      type: row.attachment_type || "application/octet-stream",
-      size: row.attachment_size || 0
-    } : null
+  return rows.map(row=>({
+    id:row.id,userId:row.user_id,
+    user:row.chat_users?.display_name||row.chat_users?.username||"Unknown",
+    username:row.chat_users?.username||"",
+    avatarUrl:row.chat_users?.avatar_url||null,
+    text:row.content,time:row.created_at,editedAt:row.edited_at||null,
+    attachments:Array.isArray(row.attachments)?row.attachments:(row.attachment_url?[{
+      url:row.attachment_url,name:row.attachment_name||"file",
+      type:row.attachment_type||"application/octet-stream",size:row.attachment_size||0
+    }]:[]),
+    attachment:row.attachment_url?{
+      url:row.attachment_url,name:row.attachment_name||"file",
+      type:row.attachment_type||"application/octet-stream",size:row.attachment_size||0
+    }:null,
+    reactions:reactionMap[row.id]||[]
   }));
 }
 
@@ -664,6 +641,372 @@ function verifyGatePassword(input) {
     typeof YAMATO_GATE_PASSWORD === "string" &&
     input === YAMATO_GATE_PASSWORD;
 }
+
+
+function canonicalPair(a, b) {
+  return String(a) < String(b) ? [a, b] : [b, a];
+}
+
+async function getFriendshipForAccounts(a, b) {
+  const [userA, userB] = canonicalPair(a, b);
+  const { data, error } = await supabase
+    .from("friendships")
+    .select("*")
+    .eq("user_a_id", userA)
+    .eq("user_b_id", userB)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function isAcceptedFriend(a, b) {
+  const row = await getFriendshipForAccounts(a, b);
+  return !!row && row.status === "accepted";
+}
+
+async function getOrCreateDmConversation(a, b) {
+  const [userA, userB] = canonicalPair(a, b);
+  let { data, error } = await supabase
+    .from("dm_conversations")
+    .select("id,user_a_id,user_b_id,created_at")
+    .eq("user_a_id", userA)
+    .eq("user_b_id", userB)
+    .maybeSingle();
+  if (error) throw error;
+  if (data) return data;
+
+  const result = await supabase
+    .from("dm_conversations")
+    .insert({ user_a_id: userA, user_b_id: userB })
+    .select("id,user_a_id,user_b_id,created_at")
+    .single();
+
+  if (result.error) {
+    // Another request may have created it concurrently.
+    if (result.error.code === "23505") {
+      const retry = await supabase
+        .from("dm_conversations")
+        .select("id,user_a_id,user_b_id,created_at")
+        .eq("user_a_id", userA)
+        .eq("user_b_id", userB)
+        .single();
+      if (retry.error) throw retry.error;
+      return retry.data;
+    }
+    throw result.error;
+  }
+  return result.data;
+}
+
+async function getDmParticipants(conversationId) {
+  const { data, error } = await supabase
+    .from("dm_conversations")
+    .select("id,user_a_id,user_b_id")
+    .eq("id", conversationId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function getReactionsForTargets(targetType, ids) {
+  if (!ids.length) return {};
+  let query = supabase.from("reactions")
+    .select("id,message_id,dm_message_id,user_id,emoji,chat_users(username,display_name)")
+    .in(targetType === "channel" ? "message_id" : "dm_message_id", ids);
+  const { data, error } = await query;
+  if (error) {
+    console.error("Reaction load error:", error);
+    return {};
+  }
+
+  const out = {};
+  for (const row of data || []) {
+    const targetId = targetType === "channel" ? row.message_id : row.dm_message_id;
+    if (!out[targetId]) out[targetId] = [];
+    const existing = out[targetId].find(x => x.emoji === row.emoji);
+    if (existing) {
+      existing.count += 1;
+      if (row.user_id === currentReactionUserId) existing.mine = true;
+    } else {
+      out[targetId].push({
+        emoji: row.emoji,
+        count: 1,
+        mine: row.user_id === currentReactionUserId
+      });
+    }
+  }
+  return out;
+}
+
+async function getReactionSummary(targetType, targetId, userId) {
+  const column = targetType === "channel" ? "message_id" : "dm_message_id";
+  const { data, error } = await supabase
+    .from("reactions")
+    .select("user_id,emoji")
+    .eq(column, targetId);
+  if (error) throw error;
+
+  const grouped = [];
+  for (const row of data || []) {
+    let item = grouped.find(x => x.emoji === row.emoji);
+    if (!item) {
+      item = { emoji: row.emoji, count: 0, mine: false };
+      grouped.push(item);
+    }
+    item.count += 1;
+    if (row.user_id === userId) item.mine = true;
+  }
+  return grouped;
+}
+
+async function getFriendData(accountId) {
+  const { data: rows, error } = await supabase
+    .from("friendships")
+    .select("id,user_a_id,user_b_id,requester_id,status,created_at,updated_at")
+    .or(`user_a_id.eq.${accountId},user_b_id.eq.${accountId}`)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  const otherIds = [...new Set((rows || []).map(r => r.user_a_id === accountId ? r.user_b_id : r.user_a_id))];
+  let accounts = [];
+  if (otherIds.length) {
+    const result = await supabase
+      .from("accounts")
+      .select("id,username,display_name,bio,avatar_url")
+      .in("id", otherIds);
+    if (result.error) throw result.error;
+    accounts = result.data || [];
+  }
+  const byId = Object.fromEntries(accounts.map(a => [a.id, a]));
+
+  const friends = [], incoming = [], outgoing = [];
+  for (const row of rows || []) {
+    const otherId = row.user_a_id === accountId ? row.user_b_id : row.user_a_id;
+    const other = byId[otherId];
+    if (!other) continue;
+    const item = { ...row, other };
+    if (row.status === "accepted") friends.push(item);
+    else if (row.status === "pending" && row.requester_id !== accountId) incoming.push(item);
+    else if (row.status === "pending" && row.requester_id === accountId) outgoing.push(item);
+  }
+  return { friends, incoming, outgoing };
+}
+
+async function sendSocialUpdate(accountId) {
+  const data = await getFriendData(accountId);
+  for (const [client, info] of clients) {
+    if (info.accountId === accountId && client.readyState === 1) {
+      client.send(JSON.stringify({ type: "friends_updated", data }));
+    }
+  }
+}
+
+async function sendToAccount(accountId, payload) {
+  const text = JSON.stringify(payload);
+  for (const [client, info] of clients) {
+    if (info.accountId === accountId && client.readyState === 1) client.send(text);
+  }
+}
+
+async function getDmHistory(conversationId, accountId) {
+  const participant = await getDmParticipants(conversationId);
+  if (!participant || ![participant.user_a_id, participant.user_b_id].includes(accountId)) return [];
+
+  const { data, error } = await supabase
+    .from("dm_messages")
+    .select("id,conversation_id,sender_id,content,created_at,edited_at,accounts(username,display_name,avatar_url)")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: true })
+    .limit(MAX_MESSAGES);
+  if (error) throw error;
+
+  const ids = (data || []).map(x => x.id);
+  const { data: reactions, error: reactionError } = ids.length
+    ? await supabase.from("reactions").select("dm_message_id,user_id,emoji").in("dm_message_id", ids)
+    : { data: [], error: null };
+  if (reactionError) throw reactionError;
+
+  const reactionMap = {};
+  for (const r of reactions || []) {
+    if (!reactionMap[r.dm_message_id]) reactionMap[r.dm_message_id] = [];
+    let item = reactionMap[r.dm_message_id].find(x => x.emoji === r.emoji);
+    if (!item) {
+      item = { emoji:r.emoji, count:0, mine:false };
+      reactionMap[r.dm_message_id].push(item);
+    }
+    item.count++;
+    if (r.user_id === (await getChatUserIdByAccount(accountId))) item.mine = true;
+  }
+
+  return (data || []).map(row => ({
+    id: row.id,
+    dmConversationId: row.conversation_id,
+    userId: row.sender_id,
+    username: row.accounts?.username || "",
+    user: row.accounts?.display_name || row.accounts?.username || "Unknown",
+    avatarUrl: row.accounts?.avatar_url || null,
+    text: row.content,
+    time: row.created_at,
+    editedAt: row.edited_at || null,
+    reactions: reactionMap[row.id] || []
+  }));
+}
+
+async function getChatUserIdByAccount(accountId) {
+  const { data, error } = await supabase
+    .from("chat_users")
+    .select("id")
+    .eq("username", (
+      await supabase.from("accounts").select("username").eq("id", accountId).single()
+    ).data?.username || "")
+    .maybeSingle();
+  if (error) return null;
+  return data?.id || null;
+}
+
+
+app.get("/api/friends", requireAccount, async (req, res) => {
+  try {
+    res.json({ ok: true, data: await getFriendData(req.account.id) });
+  } catch (error) {
+    console.error("Friends load error:", error);
+    res.status(500).json({ ok:false, error:"フレンド情報の取得に失敗しました" });
+  }
+});
+
+app.post("/api/friends/request", requireAccount, async (req, res) => {
+  try {
+    const username = String(req.body.username || "").trim();
+    if (!validUsername(username)) return res.status(400).json({ok:false,error:"ユーザー名が正しくありません"});
+    const { data: target, error: targetError } = await supabase
+      .from("accounts").select("id,username,display_name,bio,avatar_url").eq("username", username).maybeSingle();
+    if (targetError) throw targetError;
+    if (!target) return res.status(404).json({ok:false,error:"そのユーザーは見つかりません"});
+    if (target.id === req.account.id) return res.status(400).json({ok:false,error:"自分自身は追加できません"});
+
+    const [a,b] = canonicalPair(req.account.id,target.id);
+    const existing = await getFriendshipForAccounts(req.account.id,target.id);
+    if (existing?.status === "accepted") return res.status(400).json({ok:false,error:"すでにフレンドです"});
+    if (existing?.status === "pending") {
+      if (existing.requester_id === req.account.id) return res.status(400).json({ok:false,error:"すでに申請済みです"});
+      return res.status(400).json({ok:false,error:"相手からフレンド申請が届いています。承認してください"});
+    }
+
+    const { data: friendship, error } = await supabase.from("friendships").upsert({
+      user_a_id:a,user_b_id:b,requester_id:req.account.id,status:"pending",updated_at:new Date().toISOString()
+    },{onConflict:"user_a_id,user_b_id"}).select().single();
+    if (error) throw error;
+
+    await sendSocialUpdate(req.account.id);
+    await sendSocialUpdate(target.id);
+    await sendToAccount(target.id,{type:"friend_request",friendshipId:friendship.id,from:{
+      id:req.account.id,username:req.account.username,displayName:req.account.display_name,avatarUrl:req.account.avatar_url
+    }});
+    res.json({ok:true});
+  } catch(error) {
+    console.error("Friend request error:",error);
+    res.status(500).json({ok:false,error:"フレンド申請に失敗しました"});
+  }
+});
+
+app.post("/api/friends/:id/accept", requireAccount, async (req,res)=>{
+  try {
+    const {data: row,error} = await supabase.from("friendships").select("*").eq("id",req.params.id).maybeSingle();
+    if(error) throw error;
+    if(!row || row.status!=="pending" || row.requester_id===req.account.id ||
+       ![row.user_a_id,row.user_b_id].includes(req.account.id)) {
+      return res.status(404).json({ok:false,error:"申請が見つかりません"});
+    }
+    const {data: updated,error:updateError}=await supabase.from("friendships")
+      .update({status:"accepted",updated_at:new Date().toISOString()}).eq("id",row.id)
+      .select().single();
+    if(updateError) throw updateError;
+    await sendSocialUpdate(row.user_a_id);
+    await sendSocialUpdate(row.user_b_id);
+    await sendToAccount(row.requester_id,{type:"friend_accepted",friendshipId:row.id});
+    res.json({ok:true,friendship:updated});
+  }catch(error){
+    console.error("Friend accept error:",error);
+    res.status(500).json({ok:false,error:"承認に失敗しました"});
+  }
+});
+
+app.post("/api/friends/:id/reject", requireAccount, async (req,res)=>{
+  try {
+    const {data: row,error}=await supabase.from("friendships").select("*").eq("id",req.params.id).maybeSingle();
+    if(error) throw error;
+    if(!row || row.status!=="pending" || ![row.user_a_id,row.user_b_id].includes(req.account.id)) {
+      return res.status(404).json({ok:false,error:"申請が見つかりません"});
+    }
+    await supabase.from("friendships").delete().eq("id",row.id);
+    await sendSocialUpdate(row.user_a_id);
+    await sendSocialUpdate(row.user_b_id);
+    res.json({ok:true});
+  }catch(error){
+    console.error("Friend reject error:",error);
+    res.status(500).json({ok:false,error:"申請の処理に失敗しました"});
+  }
+});
+
+app.delete("/api/friends/:id", requireAccount, async (req,res)=>{
+  try {
+    const {data: row,error}=await supabase.from("friendships").select("*").eq("id",req.params.id).maybeSingle();
+    if(error) throw error;
+    if(!row || ![row.user_a_id,row.user_b_id].includes(req.account.id)) return res.status(404).json({ok:false,error:"フレンドが見つかりません"});
+    await supabase.from("friendships").delete().eq("id",row.id);
+    await sendSocialUpdate(row.user_a_id);
+    await sendSocialUpdate(row.user_b_id);
+    res.json({ok:true});
+  }catch(error){
+    console.error("Friend delete error:",error);
+    res.status(500).json({ok:false,error:"フレンド解除に失敗しました"});
+  }
+});
+
+app.get("/api/dms", requireAccount, async (req,res)=>{
+  try {
+    const id=req.account.id;
+    const {data: rows,error}=await supabase.from("dm_conversations")
+      .select("id,user_a_id,user_b_id,created_at")
+      .or(`user_a_id.eq.${id},user_b_id.eq.${id}`)
+      .order("created_at",{ascending:false});
+    if(error) throw error;
+    const otherIds=(rows||[]).map(r=>r.user_a_id===id?r.user_b_id:r.user_a_id);
+    const accounts=otherIds.length ? (await supabase.from("accounts")
+      .select("id,username,display_name,avatar_url").in("id",otherIds)).data||[] : [];
+    const byId=Object.fromEntries(accounts.map(a=>[a.id,a]));
+    const result=[];
+    for(const row of rows||[]){
+      const otherId=row.user_a_id===id?row.user_b_id:row.user_a_id;
+      const {data:last}=await supabase.from("dm_messages").select("content,created_at")
+        .eq("conversation_id",row.id).order("created_at",{ascending:false}).limit(1).maybeSingle();
+      result.push({id:row.id,other:byId[otherId]||null,lastMessage:last||null});
+    }
+    res.json({ok:true,dms:result});
+  }catch(error){
+    console.error("DM list error:",error);
+    res.status(500).json({ok:false,error:"DM一覧の取得に失敗しました"});
+  }
+});
+
+app.post("/api/dms/open", requireAccount, async (req,res)=>{
+  try {
+    const username=String(req.body.username||"").trim();
+    const {data: target,error}=await supabase.from("accounts")
+      .select("id,username,display_name,bio,avatar_url").eq("username",username).maybeSingle();
+    if(error) throw error;
+    if(!target) return res.status(404).json({ok:false,error:"ユーザーが見つかりません"});
+    if(target.id===req.account.id) return res.status(400).json({ok:false,error:"自分自身にはDMできません"});
+    if(!await isAcceptedFriend(req.account.id,target.id)) {
+      return res.status(403).json({ok:false,error:"DMするには先にフレンドになる必要があります"});
+    }
+    const conversation=await getOrCreateDmConversation(req.account.id,target.id);
+    res.json({ok:true,conversation,other:target});
+  }catch(error){
+    console.error("DM open error:",error);
+    res.status(500).json({ok:false,error:"DMを開けませんでした"});
+  }
+});
 
 wss.on("connection", async (ws, req) => {
   const token = parseCookies(req).yamato_session;
@@ -693,13 +1036,15 @@ wss.on("connection", async (ws, req) => {
     username: account.username,
     name: account.display_name,
     avatarUrl: account.avatar_url || null,
-    channel: "general"
+    channel: "general",
+    view: "channel",
+    dmConversationId: null
   };
 
   clients.set(ws, user);
 
   try {
-    const history = await getHistory("general");
+    const history = await getHistory("general", dbUser.id);
 
     ws.send(JSON.stringify({
       type: "welcome",
@@ -740,7 +1085,9 @@ wss.on("connection", async (ws, req) => {
       if (!channels[channel]) return;
 
       user.channel = channel;
-      const history = await getHistory(channel);
+      user.view = "channel";
+      user.dmConversationId = null;
+      const history = await getHistory(channel, user.dbUserId);
 
       ws.send(JSON.stringify({
         type: "channel_history",
@@ -749,6 +1096,143 @@ wss.on("connection", async (ws, req) => {
       }));
 
       sendUserList();
+      return;
+    }
+
+    if (data.type === "open_dm") {
+      const conversationId = String(data.conversationId || "");
+      if (!conversationId) return;
+      const participant = await getDmParticipants(conversationId);
+      if (!participant || ![participant.user_a_id,participant.user_b_id].includes(user.accountId)) return;
+      user.view = "dm";
+      user.dmConversationId = conversationId;
+      const history = await getDmHistory(conversationId, user.accountId);
+      ws.send(JSON.stringify({type:"dm_history",conversationId,messages:history}));
+      return;
+    }
+
+    if (data.type === "dm_message") {
+      const conversationId = String(data.conversationId || "");
+      const text = String(data.text || "").trim().slice(0,2000);
+      if (!conversationId || !text) return;
+      const participant = await getDmParticipants(conversationId);
+      if (!participant || ![participant.user_a_id,participant.user_b_id].includes(user.accountId)) return;
+
+      const {data:saved,error}=await supabase.from("dm_messages").insert({
+        conversation_id:conversationId,sender_id:user.accountId,content:text
+      }).select("id,conversation_id,sender_id,content,created_at,edited_at").single();
+      if(error){console.error("DM message save error:",error);return;}
+
+      const message={
+        id:saved.id,dmConversationId:conversationId,userId:saved.sender_id,
+        username:user.username,user:user.name,avatarUrl:user.avatarUrl||null,
+        text:saved.content,time:saved.created_at,editedAt:saved.edited_at||null,reactions:[]
+      };
+      const recipients=[participant.user_a_id,participant.user_b_id];
+      for(const [client,info] of clients){
+        if(recipients.includes(info.accountId) && info.view==="dm" && info.dmConversationId===conversationId && client.readyState===1){
+          client.send(JSON.stringify({type:"dm_message",conversationId,message}));
+        } else if(recipients.includes(info.accountId) && info.accountId!==user.accountId && client.readyState===1){
+          client.send(JSON.stringify({type:"dm_notification",conversationId,message}));
+        }
+      }
+      return;
+    }
+
+    if (data.type === "dm_edit_message") {
+      const messageId = String(data.messageId || "").trim();
+      const conversationId = String(data.conversationId || "").trim();
+      const newText = String(data.text || "").trim().slice(0, 2000);
+      if (!messageId || !conversationId || !newText) return;
+
+      const participant = await getDmParticipants(conversationId);
+      if (!participant || ![participant.user_a_id,participant.user_b_id].includes(user.accountId)) return;
+
+      const {data:target,error:findError}=await supabase.from("dm_messages")
+        .select("id,conversation_id,sender_id").eq("id",messageId).maybeSingle();
+      if(findError || !target || target.conversation_id!==conversationId || target.sender_id!==user.accountId) return;
+
+      const {data:updated,error:updateError}=await supabase.from("dm_messages")
+        .update({content:newText,edited_at:new Date().toISOString()})
+        .eq("id",messageId).eq("sender_id",user.accountId).select("id,content,edited_at").single();
+      if(updateError || !updated){console.error("DM edit error:",updateError);return;}
+
+      for(const [client,info] of clients){
+        if([participant.user_a_id,participant.user_b_id].includes(info.accountId) &&
+           info.view==="dm" && info.dmConversationId===conversationId && client.readyState===1){
+          client.send(JSON.stringify({type:"dm_message_edited",conversationId,messageId:updated.id,text:updated.content,editedAt:updated.edited_at}));
+        }
+      }
+      return;
+    }
+
+    if (data.type === "dm_delete_message") {
+      const messageId=String(data.messageId||"").trim();
+      const conversationId=String(data.conversationId||"").trim();
+      if(!messageId || !conversationId) return;
+
+      const participant=await getDmParticipants(conversationId);
+      if(!participant || ![participant.user_a_id,participant.user_b_id].includes(user.accountId)) return;
+
+      const {data:target,error:findError}=await supabase.from("dm_messages")
+        .select("id,conversation_id,sender_id").eq("id",messageId).maybeSingle();
+      if(findError || !target || target.conversation_id!==conversationId || target.sender_id!==user.accountId) return;
+
+      const {error:deleteError}=await supabase.from("dm_messages").delete()
+        .eq("id",messageId).eq("sender_id",user.accountId);
+      if(deleteError){console.error("DM delete error:",deleteError);return;}
+
+      for(const [client,info] of clients){
+        if([participant.user_a_id,participant.user_b_id].includes(info.accountId) &&
+           info.view==="dm" && info.dmConversationId===conversationId && client.readyState===1){
+          client.send(JSON.stringify({type:"dm_message_deleted",conversationId,messageId}));
+        }
+      }
+      return;
+    }
+
+    if (data.type === "reaction_toggle") {
+      const targetType = data.targetType === "dm" ? "dm" : "channel";
+      const messageId = String(data.messageId || "");
+      const emoji = String(data.emoji || "").trim().slice(0,16);
+      if (!messageId || !emoji) return;
+
+      let allowed = false;
+      let recipients = [];
+      if (targetType === "channel") {
+        const channelId = channels[user.channel]?.id;
+        if (!channelId) return;
+        const {data:target,error}=await supabase.from("messages").select("id,channel_id").eq("id",messageId).maybeSingle();
+        if(error || !target || target.channel_id!==channelId) return;
+        allowed = true;
+        recipients = [...clients.entries()].filter(([c,info])=>info.view==="channel"&&info.channel===user.channel&&c.readyState===1);
+      } else {
+        const conversationId=String(data.conversationId||"");
+        const participant=await getDmParticipants(conversationId);
+        if(!participant || ![participant.user_a_id,participant.user_b_id].includes(user.accountId)) return;
+        const {data:target,error}=await supabase.from("dm_messages").select("id,conversation_id").eq("id",messageId).maybeSingle();
+        if(error || !target || target.conversation_id!==conversationId) return;
+        allowed=true;
+        recipients=[...clients.entries()].filter(([c,info])=>info.view==="dm"&&info.dmConversationId===conversationId&&c.readyState===1);
+      }
+      if(!allowed) return;
+
+      const column=targetType==="channel"?"message_id":"dm_message_id";
+      const existing=await supabase.from("reactions").select("id").eq(column,messageId).eq("user_id",user.dbUserId).eq("emoji",emoji).maybeSingle();
+      if(existing.error){console.error("Reaction lookup error:",existing.error);return;}
+      if(existing.data){
+        await supabase.from("reactions").delete().eq("id",existing.data.id);
+      } else {
+        const row={user_id:user.dbUserId,emoji};
+        row[column]=messageId;
+        const {error}=await supabase.from("reactions").insert(row);
+        if(error){console.error("Reaction insert error:",error);return;}
+      }
+
+      const summary=await getReactionSummary(targetType,messageId,user.dbUserId);
+      const payload={type:"reaction_update",targetType,messageId,reactions:summary};
+      if(targetType==="dm") payload.conversationId=String(data.conversationId||"");
+      for(const [client] of recipients) client.send(JSON.stringify(payload));
       return;
     }
 
@@ -847,7 +1331,7 @@ wss.on("connection", async (ws, req) => {
       };
 
       for (const [client, info] of clients) {
-        if (info.channel === channel && client.readyState === 1) {
+        if (info.view === "channel" && info.channel === channel && client.readyState === 1) {
           client.send(JSON.stringify({
             type: "message",
             channel,

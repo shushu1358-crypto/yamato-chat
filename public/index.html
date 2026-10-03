@@ -25,6 +25,38 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--accent2);font-weight:700;flex:none}
 .meinfo{min-width:0}.meinfo b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .status{font-size:11px;color:#67d391}
+
+.social{padding:8px 10px;border-top:1px solid var(--line);overflow:auto;max-height:46vh}
+.social-head{display:flex;align-items:center;justify-content:space-between;padding:8px;color:var(--muted);font-size:11px;font-weight:700}
+.social-btn{width:100%;border:0;background:transparent;color:#c8ced9;text-align:left;padding:9px 10px;border-radius:7px;cursor:pointer}
+.social-btn:hover,.social-btn.active{background:var(--hover);color:#fff}
+.dm-item{display:flex;align-items:center;gap:8px;padding:8px;border-radius:7px;cursor:pointer}
+.dm-item:hover{background:var(--hover)}
+.dm-item .avatar{width:28px;height:28px}
+.dm-item .dm-name{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+.social-modal{position:fixed;inset:0;background:#080a0fb8;display:grid;place-items:center;z-index:20;padding:20px}
+.social-card{width:min(560px,94vw);max-height:min(720px,90vh);overflow:auto;background:#242730;border:1px solid var(--line);border-radius:12px;padding:20px;box-shadow:0 20px 70px #0009}
+.social-card h2{margin:0 0 14px}
+.social-close{float:right;border:0;background:#3a3f4d;color:#fff;border-radius:50%;width:30px;height:30px;cursor:pointer}
+.social-row{display:flex;gap:8px;margin:10px 0}
+.social-row input{flex:1;background:#1b1e25;color:#fff;border:1px solid var(--line);border-radius:7px;padding:10px}
+.social-primary{border:0;background:var(--accent);color:#fff;border-radius:7px;padding:10px 14px;font-weight:700;cursor:pointer}
+.social-section{margin-top:18px}
+.social-section h3{font-size:12px;color:var(--muted);margin:0 0 8px}
+.friend-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #303542}
+.friend-row .avatar{width:34px;height:34px}
+.friend-info{min-width:0;flex:1}
+.friend-info b,.friend-info small{display:block}
+.friend-info small{color:var(--muted)}
+.friend-actions{display:flex;gap:6px}
+.friend-actions button{border:0;border-radius:6px;padding:7px 9px;background:#353a47;color:#fff;cursor:pointer}
+.friend-actions .accept{background:#3d8d63}
+.friend-actions .danger{background:#8f3d45}
+.reaction-bar{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.reaction{border:1px solid var(--line);background:#1b1f28;color:#dce2ed;border-radius:12px;padding:2px 7px;font-size:12px;cursor:pointer}
+.reaction.mine{border-color:var(--accent);background:#272d55}
+.reaction-add{border:1px solid var(--line);background:#171a22;color:#bfc7d8;border-radius:12px;padding:2px 7px;cursor:pointer;font-size:12px}
+.hidden{display:none!important}
 .main{display:flex;flex-direction:column;min-width:0;min-height:0}
 .header{height:60px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 18px;font-weight:700}
 .header small{margin-left:10px;color:var(--muted);font-weight:400}
@@ -176,6 +208,20 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
   </div>
 </div>
 
+<div id="socialModal" class="social-modal hidden">
+  <div class="social-card">
+    <button class="social-close" id="closeSocial">×</button>
+    <h2>フレンド</h2>
+    <div class="social-row">
+      <input id="friendUsername" maxlength="24" placeholder="ユーザー名（例: mint_03）">
+      <button class="social-primary" id="sendFriendRequest">追加</button>
+    </div>
+    <div id="friendError" class="auth-error"></div>
+    <div class="social-section"><h3>フレンド申請</h3><div id="incomingFriends"></div></div>
+    <div class="social-section"><h3>送信済み</h3><div id="outgoingFriends"></div></div>
+    <div class="social-section"><h3>フレンド</h3><div id="friendsList"></div></div>
+  </div>
+</div>
 <div class="app">
   <aside class="sidebar">
     <div class="brand">Yamato <span>Chat</span></div>
@@ -184,6 +230,12 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
       <div class="channel active" data-channel="general"># general</div>
       <div class="channel" data-channel="chat"># 雑談</div>
       <div class="channel" data-channel="game"># ゲーム</div>
+    </div>
+    <div class="social">
+      <div class="social-head"><span>SOCIAL</span></div>
+      <button class="social-btn" id="friendsButton">👥 フレンド</button>
+      <button class="social-btn" id="newDmButton">✉️ 新しいDM</button>
+      <div id="dmList"></div>
     </div>
     <div class="me" id="profileButton">
       <div class="avatar" id="myAvatar">?</div>
@@ -241,6 +293,10 @@ let myId = "";
 let currentChannel = "general";
 let account = null;
 let reconnectTimer = null;
+let viewMode = "channel";
+let currentDmId = null;
+let currentDmOther = null;
+let friendData = {friends:[],incoming:[],outgoing:[]};
 
 const $ = id => document.getElementById(id);
 const messages = $("messages");
@@ -364,6 +420,145 @@ async function register(e) {
   }
 }
 
+
+async function loadFriends() {
+  try {
+    const data = await api("/api/friends");
+    friendData = data.data || {friends:[],incoming:[],outgoing:[]};
+    renderFriends();
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+async function loadDmList() {
+  try {
+    const data = await api("/api/dms");
+    const list = $("dmList");
+    list.innerHTML = "";
+    (data.dms || []).forEach(dm => {
+      const row = document.createElement("div");
+      row.className = "dm-item";
+      row.dataset.dmId = dm.id;
+      const av = document.createElement("div");
+      av.className = "avatar";
+      setAvatarElement(av, dm.other?.avatar_url, dm.other?.display_name || dm.other?.username);
+      const name = document.createElement("div");
+      name.className = "dm-name";
+      name.textContent = dm.other?.display_name || dm.other?.username || "DM";
+      row.append(av,name);
+      row.addEventListener("click", () => openDm(dm.id, dm.other));
+      list.appendChild(row);
+    });
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function renderFriends() {
+  const render = (el, rows, incoming=false) => {
+    el.innerHTML = "";
+    if (!rows.length) {
+      el.innerHTML = '<div style="color:var(--muted);font-size:13px">なし</div>';
+      return;
+    }
+    rows.forEach(item => {
+      const row=document.createElement("div"); row.className="friend-row";
+      const av=document.createElement("div"); av.className="avatar";
+      setAvatarElement(av,item.other?.avatar_url,item.other?.display_name||item.other?.username);
+      const info=document.createElement("div"); info.className="friend-info";
+      const b=document.createElement("b"); b.textContent=item.other?.display_name||item.other?.username;
+      const small=document.createElement("small"); small.textContent="@"+(item.other?.username||"");
+      info.append(b,small);
+      const actions=document.createElement("div"); actions.className="friend-actions";
+      if(incoming){
+        const accept=document.createElement("button"); accept.className="accept"; accept.textContent="承認";
+        accept.onclick=()=>friendAction(`/api/friends/${item.id}/accept`);
+        const reject=document.createElement("button"); reject.className="danger"; reject.textContent="拒否";
+        reject.onclick=()=>friendAction(`/api/friends/${item.id}/reject`);
+        actions.append(accept,reject);
+      } else if (item.status==="accepted") {
+        const dm=document.createElement("button"); dm.textContent="DM";
+        dm.onclick=()=>openDmForUsername(item.other.username);
+        const remove=document.createElement("button"); remove.className="danger"; remove.textContent="解除";
+        remove.onclick=()=>friendAction(`/api/friends/${item.id}`,"DELETE");
+        actions.append(dm,remove);
+      } else {
+        const small2=document.createElement("small"); small2.textContent="申請中"; small2.style.color="var(--muted)";
+        actions.append(small2);
+      }
+      row.append(av,info,actions); el.appendChild(row);
+    });
+  };
+  render($("incomingFriends"),friendData.incoming,true);
+  render($("outgoingFriends"),friendData.outgoing,false);
+  render($("friendsList"),friendData.friends,false);
+}
+
+async function friendAction(url, method="POST") {
+  try {
+    await api(url,{method});
+    await loadFriends();
+    await loadDmList();
+  } catch(err) {
+    alert(err.message);
+  }
+}
+
+async function openDmForUsername(username) {
+  try {
+    const data=await api("/api/dms/open",{method:"POST",body:JSON.stringify({username})});
+    await loadDmList();
+    openDm(data.conversation.id,data.other);
+    $("socialModal").classList.add("hidden");
+  } catch(err) { alert(err.message); }
+}
+
+async function openDm(conversationId, other) {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  viewMode="dm"; currentDmId=conversationId; currentDmOther=other;
+  document.querySelectorAll(".channel").forEach(x=>x.classList.remove("active"));
+  $("channelName").textContent = other?.display_name || other?.username || "DM";
+  $("messageInput").placeholder = `@${other?.username || ""} にメッセージ`;
+  messages.innerHTML="";
+  ws.send(JSON.stringify({type:"open_dm",conversationId}));
+}
+
+function showFriendsModal() {
+  $("socialModal").classList.remove("hidden");
+  $("friendError").textContent="";
+  loadFriends();
+}
+
+function renderDmHistory(list) {
+  messages.innerHTML="";
+  list.forEach(appendMessage);
+  messages.scrollTop=messages.scrollHeight;
+}
+
+async function toggleReaction(messageId, emoji, targetType, conversationId=null) {
+  if (ws?.readyState!==WebSocket.OPEN) return;
+  ws.send(JSON.stringify({type:"reaction_toggle",messageId,emoji,targetType,conversationId}));
+}
+
+function renderReactionBar(wrap, reactions, messageId, targetType, conversationId=null) {
+  let bar=wrap.querySelector(".reaction-bar");
+  if(!bar){bar=document.createElement("div");bar.className="reaction-bar";wrap.querySelector(".msgbody").appendChild(bar);}
+  bar.innerHTML="";
+  const quick=["👍","❤️","😂","🎉","😮"];
+  (reactions||[]).forEach(r=>{
+    const b=document.createElement("button");b.className="reaction"+(r.mine?" mine":"");b.textContent=`${r.emoji} ${r.count}`;
+    b.onclick=()=>toggleReaction(messageId,r.emoji,targetType,conversationId);
+    bar.appendChild(b);
+  });
+  quick.forEach(emoji=>{
+    const b=document.createElement("button");b.className="reaction-add";b.textContent=emoji;
+    b.title="リアクション";
+    b.onclick=()=>toggleReaction(messageId,emoji,targetType,conversationId);
+    bar.appendChild(b);
+  });
+}
+
 function connect() {
   if (!account) return;
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
@@ -394,6 +589,57 @@ function connect() {
         });
         updateVisibleAvatars(data.account.avatarUrl || null);
       }
+      return;
+    }
+
+    if (data.type === "friends_updated") {
+      friendData = data.data || friendData;
+      renderFriends();
+      loadDmList();
+      return;
+    }
+
+    if (data.type === "friend_request" || data.type === "friend_accepted") {
+      loadFriends();
+      loadDmList();
+      return;
+    }
+
+    if (data.type === "dm_history") {
+      viewMode="dm";
+      currentDmId=data.conversationId;
+      renderDmHistory(data.messages || []);
+      return;
+    }
+
+    if (data.type === "dm_message") {
+      if (viewMode==="dm" && data.conversationId===currentDmId) appendMessage(data.message);
+      else loadDmList();
+      return;
+    }
+
+    if (data.type === "dm_notification") {
+      loadDmList();
+      return;
+    }
+
+    if (data.type === "dm_message_edited") {
+      if (viewMode==="dm" && data.conversationId===currentDmId) {
+        updateMessageInDom(data.messageId,data.text,data.editedAt);
+      }
+      return;
+    }
+
+    if (data.type === "dm_message_deleted") {
+      if (viewMode==="dm" && data.conversationId===currentDmId) {
+        removeMessageFromDom(data.messageId);
+      }
+      return;
+    }
+
+    if (data.type === "reaction_update") {
+      const wrap=document.querySelector(`.message[data-message-id="${CSS.escape(data.messageId)}"]`);
+      if(wrap) renderReactionBar(wrap,data.reactions||[],data.messageId,data.targetType,data.conversationId||null);
       return;
     }
 
@@ -509,20 +755,24 @@ function removeMessageFromDom(messageId) {
   if (wrap) wrap.remove();
 }
 
-function editOwnMessage(messageId, currentText) {
+function editOwnMessage(messageId, currentText, dmConversationId=null) {
   const value = window.prompt("メッセージを編集", currentText || "");
   if (value === null) return;
   const text = value.trim();
   if (!text || text === currentText) return;
   if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({type:"edit_message", messageId, text}));
+    ws.send(JSON.stringify(dmConversationId
+      ? {type:"dm_edit_message",conversationId:dmConversationId,messageId,text}
+      : {type:"edit_message",messageId,text}));
   }
 }
 
-function deleteOwnMessage(messageId) {
+function deleteOwnMessage(messageId, dmConversationId=null) {
   if (!window.confirm("このメッセージを削除しますか？")) return;
   if (ws?.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({type:"delete_message", messageId}));
+    ws.send(JSON.stringify(dmConversationId
+      ? {type:"dm_delete_message",conversationId:dmConversationId,messageId}
+      : {type:"delete_message",messageId}));
   }
 }
 
@@ -566,7 +816,7 @@ function appendMessage(m) {
     edit.title = "編集";
     edit.textContent = "✎";
     edit.setAttribute("aria-label", "編集");
-    edit.addEventListener("click", () => editOwnMessage(m.id, m.text || ""));
+    edit.addEventListener("click", () => editOwnMessage(m.id, m.text || "", m.dmConversationId || null));
 
     const del = document.createElement("button");
     del.className = "message-action delete";
@@ -574,7 +824,7 @@ function appendMessage(m) {
     del.title = "削除";
     del.textContent = "🗑";
     del.setAttribute("aria-label", "削除");
-    del.addEventListener("click", () => deleteOwnMessage(m.id));
+    del.addEventListener("click", () => deleteOwnMessage(m.id, m.dmConversationId || null));
 
     actions.append(edit,del);
     head.appendChild(actions);
@@ -662,6 +912,16 @@ function appendMessage(m) {
     body.appendChild(attachmentWrap);
   }
 
+  if (m.id) {
+    renderReactionBar(
+      wrap,
+      m.reactions || [],
+      m.id,
+      m.dmConversationId ? "dm" : "channel",
+      m.dmConversationId || null
+    );
+  }
+
   wrap.append(avatar,body);
   messages.appendChild(wrap);
   messages.scrollTop = messages.scrollHeight;
@@ -720,6 +980,27 @@ document.querySelectorAll(".eye").forEach(btn => {
   });
 });
 
+
+$("friendsButton").addEventListener("click", showFriendsModal);
+$("closeSocial").addEventListener("click", () => $("socialModal").classList.add("hidden"));
+$("socialModal").addEventListener("click", e => {
+  if (e.target === $("socialModal")) $("socialModal").classList.add("hidden");
+});
+$("sendFriendRequest").addEventListener("click", async () => {
+  const username=$("friendUsername").value.trim();
+  if(!username) return;
+  $("friendError").textContent="送信中…";
+  try {
+    await api("/api/friends/request",{method:"POST",body:JSON.stringify({username})});
+    $("friendUsername").value="";
+    $("friendError").textContent="フレンド申請を送信しました";
+    await loadFriends();
+  } catch(err) { $("friendError").textContent=err.message; }
+});
+$("newDmButton").addEventListener("click", () => {
+  showFriendsModal();
+  $("friendUsername").focus();
+});
 
 $("saveProfileButton").addEventListener("click", async () => {
   const button = $("saveProfileButton");
@@ -901,7 +1182,15 @@ $("messageForm").addEventListener("submit", async e => {
       attachments.push(await uploadChatFile(files[i]));
     }
 
-    ws.send(JSON.stringify({type:"message", text, attachments}));
+    if (viewMode === "dm" && currentDmId) {
+      if (attachments.length) {
+        alert("DMの添付ファイルは次のアップデートで対応します。今回はテキストのみです。");
+        return;
+      }
+      ws.send(JSON.stringify({type:"dm_message", conversationId:currentDmId, text}));
+    } else {
+      ws.send(JSON.stringify({type:"message", text, attachments}));
+    }
     $("messageInput").value = "";
     $("fileStatus").textContent = "";
     setPendingFiles([]);
@@ -919,6 +1208,9 @@ document.querySelectorAll(".channel").forEach(el => {
     document.querySelectorAll(".channel").forEach(x => x.classList.remove("active"));
     el.classList.add("active");
     currentChannel = channel;
+    viewMode = "channel";
+    currentDmId = null;
+    currentDmOther = null;
     $("channelName").textContent = el.textContent.replace("# ","");
     ws.send(JSON.stringify({type:"join_channel", channel}));
     $("messageInput").placeholder = `# ${channel} にメッセージを送信`;
@@ -939,6 +1231,10 @@ $("logoutButton").addEventListener("click", async () => {
 });
 
 checkSession();
+if (account) {
+  loadFriends();
+  loadDmList();
+}
 </script>
 </body>
 </html>
