@@ -30,8 +30,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .header small{margin-left:10px;color:var(--muted);font-weight:400}
 .messages{flex:1;min-height:0;overflow:auto;padding:18px 22px}
 .message{display:flex;gap:11px;margin:0 0 16px}
-.message:hover .message-actions{opacity:1;pointer-events:auto}
-.message-actions{display:inline-flex;gap:4px;margin-left:6px;opacity:0;pointer-events:none;transition:opacity .12s}
+.message-actions{display:inline-flex;gap:4px;margin-left:8px;opacity:1;pointer-events:auto}
 .message-action{border:0;background:#2a2e39;color:#cbd1df;border-radius:5px;width:25px;height:23px;cursor:pointer;font-size:13px;display:grid;place-items:center;padding:0}
 .message-action:hover{background:#3a3f4d;color:#fff}
 .message-action.delete:hover{background:#a83d45}
@@ -544,8 +543,11 @@ function appendMessage(m) {
 
   head.append(name,time);
 
-  const own = !!account?.chatUserId && !!m.userId &&
-    String(account.chatUserId) === String(m.userId);
+  const own = !!account && (
+    (!!account.chatUserId && !!m.userId &&
+      String(account.chatUserId) === String(m.userId)) ||
+    (!m.userId && m.user === (account.display_name || account.displayName))
+  );
 
   if (own && m.id) {
     const actions = document.createElement("span");
@@ -556,6 +558,7 @@ function appendMessage(m) {
     edit.type = "button";
     edit.title = "編集";
     edit.textContent = "✎";
+    edit.setAttribute("aria-label", "編集");
     edit.addEventListener("click", () => editOwnMessage(m.id, m.text || ""));
 
     const del = document.createElement("button");
@@ -563,6 +566,7 @@ function appendMessage(m) {
     del.type = "button";
     del.title = "削除";
     del.textContent = "🗑";
+    del.setAttribute("aria-label", "削除");
     del.addEventListener("click", () => deleteOwnMessage(m.id));
 
     actions.append(edit,del);
