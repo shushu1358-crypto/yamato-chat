@@ -675,10 +675,10 @@ app.get("/api/servers/:id/members", requireAccount, async (req,res)=>{
     if(!server) return res.status(404).json({ok:false,error:"サーバーが見つかりません"});
     await ensureServerMember(req.account.id, server.id, (server.owner_account_id===req.account.id || isGlobalAdmin(req.account)) ? "admin" : "member");
     const {data,error}=await supabase.from("server_members")
-      .select("server_id,user_id,role,accounts(id,username,display_name,bio,avatar_url)")
+      .select("server_id,account_id,role,accounts(id,username,display_name,bio,avatar_url)")
       .eq("server_id",server.id).order("role",{ascending:true});
     if(error) throw error;
-    res.json({ok:true,members:(data||[]).map(x=>({serverId:x.server_id,accountId:x.user_id,role:x.role,user:x.accounts}))});
+    res.json({ok:true,members:(data||[]).map(x=>({serverId:x.server_id,accountId:x.account_id,role:x.role,user:x.accounts}))});
   }catch(error){ console.error("Server members error:",error); res.status(500).json({ok:false,error:"メンバー一覧を取得できませんでした"}); }
 });
 
@@ -812,7 +812,7 @@ async function getServerRole(accountId, serverId) {
   const { data, error } = await supabase
     .from("server_members")
     .select("role")
-    .eq("user_id", accountId)
+    .eq("account_id", accountId)
     .eq("server_id", serverId)
     .maybeSingle();
   if (error) {
@@ -824,12 +824,12 @@ async function getServerRole(accountId, serverId) {
 
 async function ensureServerMember(accountId, serverId, role="member") {
   const {data:existing,error:findError}=await supabase.from("server_members")
-    .select("server_id,user_id,role").eq("server_id",serverId).eq("user_id",accountId).maybeSingle();
+    .select("server_id,account_id,role").eq("server_id",serverId).eq("account_id",accountId).maybeSingle();
   if(findError) throw findError;
   if(existing) return existing;
   const {data,error}=await supabase.from("server_members")
-    .insert({server_id:serverId,user_id:accountId,role})
-    .select("server_id,user_id,role").single();
+    .insert({server_id:serverId,account_id:accountId,role})
+    .select("server_id,account_id,role").single();
   if(error) throw error;
   return data;
 }

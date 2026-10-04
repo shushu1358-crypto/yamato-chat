@@ -29,3 +29,10 @@ This adds server ownership and enables:
 - server deletion (only when its channels contain no messages)
 
 Existing servers, channels, accounts, and messages are preserved.
+
+## v2.8.4 server_members 修正
+
+`server_members` は `accounts.id` を参照する `account_id` を使用します。
+既存DBが旧 `user_id -> chat_users.id` schema の場合は、同梱の `server_members_account_migration.sql` をSupabase SQL Editorで1回実行してください。
+
+また、`public/index.html` の `<style>` 閉じタグを修正済みです。
