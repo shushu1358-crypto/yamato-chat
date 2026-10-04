@@ -24,11 +24,8 @@ if (!SUPABASE_URL || !SUPABASE_SECRET_KEY || !YAMATO_GATE_PASSWORD) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SECRET_KEY);
 
-const channels = {
-  general: { name: "general", id: null },
-  chat: { name: "雑談", id: null },
-  game: { name: "ゲーム", id: null }
-};
+let serverCache = [];
+let channelCache = [];
 
 const clients = new Map();
 const MAX_MESSAGES = 200;
@@ -528,6 +525,107 @@ app.post("/api/profile/avatar", requireAccount, avatarUpload.single("file"), asy
   }
 });
 
+app.get("/api/servers", requireAccount, async (req, res) => {
+  try {
+    await refreshServerCache();
+    res.json({
+      ok: true,
+      servers: serverCache.map(server => ({
+        ...server,
+        channels: channelCache.filter(c => String(c.server_id) === String(server.id))
+      }))
+    });
+  } catch (error) {
+    console.error("Server list error:", error);
+    res.status(500).json({ ok:false, error:"サーバー一覧を取得できませんでした" });
+  }
+});
+
+app.post("/api/servers", requireAccount, async (req, res) => {
+  try {
+    const name = String(req.body.name || "").trim().slice(0, 40);
+    if (!name) return res.status(400).json({ok:false,error:"サーバー名を入力してください"});
+    const { data: server, error } = await supabase
+      .from("servers")
+      .insert({ name, owner_account_id: req.account.id })
+      .select("id,name,owner_account_id")
+      .single();
+    if (error) throw error;
+    const { data: channel, error: ce } = await supabase
+      .from("channels")
+      .insert({ server_id: server.id, name: "general" })
+      .select("id,server_id,name")
+      .single();
+    if (ce) throw ce;
+    await refreshServerCache();
+    res.json({ok:true,server:{...server,channels:[channel]}});
+  } catch(error) {
+    console.error("Server create error:",error);
+    res.status(500).json({ok:false,error:"サーバーを作成できませんでした"});
+  }
+});
+
+app.delete("/api/servers/:id", requireAccount, async (req,res) => {
+  try {
+    const server=getServer(req.params.id);
+    if(!server) return res.status(404).json({ok:false,error:"サーバーが見つかりません"});
+    if(!canManageServer(req.account,server)) return res.status(403).json({ok:false,error:"このサーバーを削除する権限がありません"});
+    const channelsForServer=channelCache.filter(c=>String(c.server_id)===String(server.id));
+    for(const ch of channelsForServer){
+      const {count,error}=await supabase.from("messages").select("id",{count:"exact",head:true}).eq("channel_id",ch.id);
+      if(error) throw error;
+      if((count||0)>0) return res.status(409).json({ok:false,error:"メッセージが残っているサーバーは削除できません。先にチャンネルを整理してください"});
+    }
+    const {error}=await supabase.from("channels").delete().eq("server_id",server.id);
+    if(error) throw error;
+    const {error:se}=await supabase.from("servers").delete().eq("id",server.id);
+    if(se) throw se;
+    await refreshServerCache();
+    res.json({ok:true});
+  }catch(error){
+    console.error("Server delete error:",error);
+    res.status(500).json({ok:false,error:"サーバーを削除できませんでした"});
+  }
+});
+
+app.post("/api/servers/:serverId/channels", requireAccount, async (req,res)=>{
+  try{
+    const server=getServer(req.params.serverId);
+    if(!server) return res.status(404).json({ok:false,error:"サーバーが見つかりません"});
+    if(!canManageServer(req.account,server)) return res.status(403).json({ok:false,error:"チャンネルを管理する権限がありません"});
+    const name=String(req.body.name||"").trim().replace(/^#+/,"").slice(0,40);
+    if(!name) return res.status(400).json({ok:false,error:"チャンネル名を入力してください"});
+    const {data:channel,error}=await supabase.from("channels").insert({server_id:server.id,name}).select("id,server_id,name").single();
+    if(error) throw error;
+    await refreshServerCache();
+    res.json({ok:true,channel});
+  }catch(error){
+    console.error("Channel create error:",error);
+    res.status(500).json({ok:false,error:"チャンネルを作成できませんでした"});
+  }
+});
+
+app.delete("/api/channels/:id", requireAccount, async (req,res)=>{
+  try{
+    const channel=getChannel(req.params.id);
+    if(!channel) return res.status(404).json({ok:false,error:"チャンネルが見つかりません"});
+    const server=getServer(channel.server_id);
+    if(!canManageServer(req.account,server)) return res.status(403).json({ok:false,error:"チャンネルを削除する権限がありません"});
+    const channelCount=channelCache.filter(c=>String(c.server_id)===String(server.id)).length;
+    if(channelCount<=1) return res.status(400).json({ok:false,error:"サーバーには最低1つのチャンネルが必要です"});
+    const {count,error:countError}=await supabase.from("messages").select("id",{count:"exact",head:true}).eq("channel_id",channel.id);
+    if(countError) throw countError;
+    if((count||0)>0) return res.status(409).json({ok:false,error:"メッセージがあるチャンネルは削除できません"});
+    const {error}=await supabase.from("channels").delete().eq("id",channel.id);
+    if(error) throw error;
+    await refreshServerCache();
+    res.json({ok:true});
+  }catch(error){
+    console.error("Channel delete error:",error);
+    res.status(500).json({ok:false,error:"チャンネルを削除できませんでした"});
+  }
+});
+
 app.post("/api/upload", requireAccount, upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
@@ -582,32 +680,55 @@ function sendUserList() {
   });
 }
 
-async function ensureDefaultData() {
-  const { data: existingServer, error: serverSelectError } = await supabase
+async function refreshServerCache() {
+  const { data: servers, error: se } = await supabase
     .from("servers")
-    .select("id")
+    .select("id,name,owner_account_id")
+    .order("id", { ascending: true });
+  if (se) throw se;
+  const { data: channels, error: ce } = await supabase
+    .from("channels")
+    .select("id,server_id,name")
+    .order("id", { ascending: true });
+  if (ce) throw ce;
+  serverCache = servers || [];
+  channelCache = channels || [];
+  return { servers: serverCache, channels: channelCache };
+}
+
+function getServer(serverId) {
+  return serverCache.find(s => String(s.id) === String(serverId)) || null;
+}
+function getChannel(channelId) {
+  return channelCache.find(c => String(c.id) === String(channelId)) || null;
+}
+function canManageServer(account, server) {
+  return !!server && (!server.owner_account_id || String(server.owner_account_id) === String(account.id));
+}
+
+async function ensureDefaultData() {
+  let { data: existingServer, error: serverSelectError } = await supabase
+    .from("servers")
+    .select("id,name,owner_account_id")
     .eq("name", "Yamato Chat")
     .limit(1)
     .maybeSingle();
-
   if (serverSelectError) throw serverSelectError;
 
   let serverId = existingServer?.id;
-
   if (!serverId) {
     const { data: createdServer, error } = await supabase
       .from("servers")
       .insert({ name: "Yamato Chat" })
-      .select("id")
+      .select("id,name,owner_account_id")
       .single();
-
     if (error) throw error;
+    existingServer = createdServer;
     serverId = createdServer.id;
   }
 
-  for (const key of Object.keys(channels)) {
-    const channelName = channels[key].name;
-
+  const defaults = ["general", "雑談", "ゲーム"];
+  for (const channelName of defaults) {
     const { data: existingChannel, error: channelSelectError } = await supabase
       .from("channels")
       .select("id")
@@ -615,32 +736,20 @@ async function ensureDefaultData() {
       .eq("name", channelName)
       .limit(1)
       .maybeSingle();
-
     if (channelSelectError) throw channelSelectError;
-
-    let channelId = existingChannel?.id;
-
-    if (!channelId) {
-      const { data: createdChannel, error } = await supabase
+    if (!existingChannel) {
+      const { error } = await supabase
         .from("channels")
-        .insert({ server_id: serverId, name: channelName })
-        .select("id")
-        .single();
-
+        .insert({ server_id: serverId, name: channelName });
       if (error) throw error;
-      channelId = createdChannel.id;
     }
-
-    channels[key].id = channelId;
   }
-
-  console.log("Supabase initialized:", Object.fromEntries(
-    Object.entries(channels).map(([key, value]) => [key, value.id])
-  ));
+  await refreshServerCache();
+  console.log("Supabase initialized:", serverCache.map(s => ({id:s.id,name:s.name})));
 }
 
-async function getHistory(channelKey, reactionUserId = null) {
-  const channelId = channels[channelKey]?.id;
+async function getHistory(channelId, reactionUserId = null) {
+  if (!getChannel(channelId)) return [];
   if (!channelId) return [];
 
   const baseSelect = `
@@ -1179,7 +1288,10 @@ wss.on("connection", async (ws, req) => {
   clients.set(ws, user);
 
   try {
-    const history = await getHistory("general", dbUser.id);
+    const defaultChannel = channelCache.find(c => c.name === "general") || channelCache[0];
+    if (!defaultChannel) throw new Error("No channels available");
+    user.channel = String(defaultChannel.id);
+    const history = await getHistory(defaultChannel.id, dbUser.id);
 
     ws.send(JSON.stringify({
       type: "welcome",
@@ -1191,11 +1303,14 @@ wss.on("connection", async (ws, req) => {
         chatUserId: dbUser.id,
         avatarUrl: account.avatar_url
       },
-      channels: Object.entries(channels).map(([key, c]) => ({
-        id: key,
-        name: c.name
+      servers: serverCache.map(server => ({
+        id: server.id,
+        name: server.name,
+        ownerAccountId: server.owner_account_id,
+        channels: channelCache.filter(c => String(c.server_id) === String(server.id)).map(c => ({id:c.id,name:c.name}))
       })),
-      currentChannel: "general",
+      channels: channelCache.map(c => ({ id: c.id, serverId: c.server_id, name: c.name })),
+      currentChannel: String(defaultChannel.id),
       messages: history
     }));
 
@@ -1217,7 +1332,7 @@ wss.on("connection", async (ws, req) => {
 
     if (data.type === "join_channel") {
       const channel = String(data.channel || "");
-      if (!channels[channel]) return;
+      if (!getChannel(channel)) return;
 
       user.channel = channel;
       user.view = "channel";
@@ -1329,7 +1444,7 @@ wss.on("connection", async (ws, req) => {
     if (data.type === "message") {
       const text = String(data.text || "").trim().slice(0, 2000);
       const channel = user.channel;
-      const channelId = channels[channel]?.id;
+      const channelId = channel;
       const rawAttachments = Array.isArray(data.attachments)
         ? data.attachments.slice(0, 10)
         : (data.attachment && typeof data.attachment === "object" ? [data.attachment] : []);
@@ -1438,7 +1553,7 @@ wss.on("connection", async (ws, req) => {
       const newText = String(data.text || "").trim().slice(0, 2000);
       if (!messageId || !newText) return;
 
-      const channelId = channels[user.channel]?.id;
+      const channelId = user.channel;
       if (!channelId || !user.dbUserId) return;
 
       const { data: target, error: findError } = await supabase
@@ -1485,7 +1600,7 @@ wss.on("connection", async (ws, req) => {
       const messageId = String(data.messageId || "").trim();
       if (!messageId) return;
 
-      const channelId = channels[user.channel]?.id;
+      const channelId = user.channel;
       if (!channelId || !user.dbUserId) return;
 
       const { data: target, error: findError } = await supabase

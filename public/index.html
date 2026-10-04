@@ -13,12 +13,12 @@
 }
 *{box-sizing:border-box}
 body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
-.app{display:grid;grid-template-columns:220px 1fr 210px;height:100vh}
+.app{display:grid;grid-template-columns:250px 1fr 210px;height:100vh}
 .sidebar,.members{background:var(--panel);border-color:var(--line)}
 .sidebar{border-right:1px solid var(--line);display:flex;flex-direction:column}
 .brand{height:60px;padding:18px;font-weight:800;border-bottom:1px solid var(--line)}
 .brand span{color:var(--accent)}
-.channels{padding:14px 10px;overflow:auto}
+.server-head{padding:10px;border-bottom:1px solid var(--line);display:flex;gap:6px;align-items:center}.server-select{flex:1;min-width:0;background:var(--panel2);color:#fff;border:1px solid var(--line);border-radius:7px;padding:9px;font-weight:700}.server-add,.channel-add,.channel-delete{border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:6px}.server-add{font-size:20px;width:34px;height:34px}.server-add:hover,.channel-add:hover{background:var(--hover);color:#fff}.channels{padding:10px;overflow:auto}.channel-tools{display:flex;align-items:center;justify-content:space-between;padding:7px 8px 4px}.channel-tools .section{padding:0}.channel-row{display:flex;align-items:center;gap:2px}.channel-row .channel{flex:1}.channel-delete{width:25px;height:25px}.channel-delete:hover{background:#7d343d;color:#fff}
 .section{font-size:11px;color:var(--muted);font-weight:700;padding:8px}
 .channel{padding:10px 12px;border-radius:7px;color:#c8ced9;cursor:pointer;margin:2px 0}
 .channel:hover,.channel.active{background:var(--hover);color:white}
@@ -247,12 +247,8 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 <div class="app">
   <aside class="sidebar">
     <div class="brand">Yamato <span>Chat</span></div>
-    <div class="channels">
-      <div class="section">CHANNELS</div>
-      <div class="channel active" data-channel="general"># general</div>
-      <div class="channel" data-channel="chat"># 雑談</div>
-      <div class="channel" data-channel="game"># ゲーム</div>
-    </div>
+    <div class="server-head"><select id="serverSelect" class="server-select"></select><button id="addServerButton" class="server-add" title="サーバーを作成">＋</button></div>
+    <div class="channels"><div class="channel-tools"><div class="section">CHANNELS</div><button id="addChannelButton" class="channel-add" title="チャンネルを追加">＋</button></div><div id="channelList"></div></div>
     <div class="social">
       <div class="social-head"><span>SOCIAL</span></div>
       <button class="social-btn" id="friendsButton">👥 フレンド</button>
@@ -311,7 +307,9 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 <script>
 let ws;
 let myId = "";
-let currentChannel = "general";
+let currentChannel = "";
+let currentServerId = "";
+let servers = [];
 let account = null;
 let reconnectTimer = null;
 let viewMode = "channel";
@@ -592,6 +590,60 @@ function renderDmHistory(list) {
   messages.scrollTop=messages.scrollHeight;
 }
 
+function renderServers(list, selectedServerId) {
+  servers = list || [];
+  const select = $("serverSelect");
+  select.innerHTML = "";
+  servers.forEach(server => {
+    const opt = document.createElement("option");
+    opt.value = server.id; opt.textContent = server.name;
+    select.appendChild(opt);
+  });
+  if (!servers.length) return;
+  const target = selectedServerId || currentServerId || servers[0].id;
+  currentServerId = String(servers.some(s=>String(s.id)===String(target)) ? target : servers[0].id);
+  select.value = currentServerId;
+  renderChannels(currentServerId);
+}
+
+function renderChannels(serverId, selectedChannelId) {
+  currentServerId = String(serverId);
+  const server = servers.find(s=>String(s.id)===currentServerId);
+  const list = $("channelList"); list.innerHTML = "";
+  if (!server) return;
+  (server.channels || []).forEach(ch => {
+    const row=document.createElement("div"); row.className="channel-row";
+    const el=document.createElement("div"); el.className="channel"; el.dataset.channel=ch.id; el.textContent="# "+ch.name;
+    if(String(ch.id)===String(selectedChannelId || currentChannel)) el.classList.add("active");
+    el.onclick=()=>joinChannel(ch);
+    row.appendChild(el);
+    const del=document.createElement("button"); del.className="channel-delete"; del.textContent="×"; del.title="チャンネルを削除";
+    del.onclick=async e=>{e.stopPropagation(); if(confirm(`「${ch.name}」を削除しますか？`)){try{await api(`/api/channels/${ch.id}`,{method:"DELETE"}); await loadServers(currentServerId);}catch(err){alert(err.message)}}};
+    row.appendChild(del); list.appendChild(row);
+  });
+}
+
+async function loadServers(preferredServerId=null) {
+  const data=await api("/api/servers");
+  renderServers(data.servers || [], preferredServerId);
+  const server=servers.find(s=>String(s.id)===String(currentServerId));
+  if(server && server.channels?.length){
+    const wanted = server.channels.some(c=>String(c.id)===String(currentChannel)) ? currentChannel : server.channels[0].id;
+    renderChannels(currentServerId,wanted);
+    if(ws && ws.readyState===WebSocket.OPEN && String(currentChannel)!==String(wanted)) joinChannel(server.channels.find(c=>String(c.id)===String(wanted)));
+  }
+}
+
+function joinChannel(ch) {
+  if(!ch || !ws || ws.readyState!==WebSocket.OPEN) return;
+  currentChannel=String(ch.id); viewMode="channel"; currentDmId=null; currentDmOther=null;
+  renderChannels(currentServerId,currentChannel);
+  $("channelName").textContent=ch.name;
+  $("messageInput").placeholder=`# ${ch.name} にメッセージを送信`;
+  messages.innerHTML="";
+  ws.send(JSON.stringify({type:"join_channel",channel:ch.id}));
+}
+
 function connect() {
   if (!account) return;
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
@@ -679,6 +731,11 @@ function connect() {
 
     if (data.type === "welcome") {
       myId = data.id;
+      currentChannel = String(data.currentChannel || currentChannel);
+      if (data.servers) {
+        const welcomeServer = data.servers.find(s => (s.channels || []).some(c => String(c.id) === currentChannel));
+        renderServers(data.servers, welcomeServer?.id || data.servers[0]?.id);
+      }
       if (data.account) {
         setAccount({
           id:data.account.id,
@@ -1309,21 +1366,29 @@ $("messageForm").addEventListener("submit", async e => {
   }
 });
 
-document.querySelectorAll(".channel").forEach(el => {
-  el.addEventListener("click", () => {
-    const channel = el.dataset.channel;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    document.querySelectorAll(".channel").forEach(x => x.classList.remove("active"));
-    el.classList.add("active");
-    currentChannel = channel;
-    viewMode = "channel";
-    currentDmId = null;
-    currentDmOther = null;
-    $("channelName").textContent = el.textContent.replace("# ","");
-    ws.send(JSON.stringify({type:"join_channel", channel}));
-    $("messageInput").placeholder = `# ${channel} にメッセージを送信`;
-  });
+$("serverSelect").addEventListener("change", async e => {
+  const id=e.target.value;
+  const server=servers.find(s=>String(s.id)===String(id));
+  if(!server) return;
+  renderChannels(id, server.channels?.[0]?.id);
+  if(server.channels?.[0]) joinChannel(server.channels[0]);
 });
+
+$("addServerButton").addEventListener("click", async () => {
+  const name=prompt("新しいサーバー名");
+  if(!name?.trim()) return;
+  try { const data=await api("/api/servers",{method:"POST",body:JSON.stringify({name:name.trim()})}); await loadServers(data.server.id); if(data.server.channels?.[0]) joinChannel(data.server.channels[0]); }
+  catch(err){ alert(err.message); }
+});
+
+$("addChannelButton").addEventListener("click", async () => {
+  if(!currentServerId) return;
+  const name=prompt("新しいチャンネル名（例: お知らせ）");
+  if(!name?.trim()) return;
+  try { const data=await api(`/api/servers/${currentServerId}/channels`,{method:"POST",body:JSON.stringify({name:name.trim()})}); await loadServers(currentServerId); if(data.channel) joinChannel(data.channel); }
+  catch(err){ alert(err.message); }
+});
+
 
 $("profileButton").addEventListener("click", () => {
   $("profilePanel").classList.toggle("hidden");
