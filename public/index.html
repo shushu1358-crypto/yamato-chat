@@ -1533,6 +1533,15 @@ function renderNotifications(){
 async function waitForBackend() {
   const overlay = $("startupOverlay");
   const status = $("startupStatus");
+
+  // When this HTML is opened directly from Windows (file://),
+  // do not block the UI behind the Render wake-up screen.
+  // The login request itself will wake Render and has CORS enabled.
+  if (location.protocol === "file:") {
+    overlay.classList.add("hidden");
+    return;
+  }
+
   while (true) {
     try {
       status.textContent = "サーバーに接続しています…";
@@ -1550,7 +1559,10 @@ async function waitForBackend() {
   }
 }
 
-waitForBackend().then(checkSession);
+waitForBackend().then(checkSession).catch(err => {
+  console.error("Startup error:", err);
+  $("startupStatus").textContent = "接続に失敗しました。再読み込みしてください。";
+});
 </script>
 </body>
 </html>
