@@ -1403,7 +1403,8 @@ app.post("/api/dms/open", requireAccount, async (req,res)=>{
   }
 });
 
-wss.on("connection", async (ws, req) => {
+wss.on("connection", (ws, req) => {
+  (async () => {
   let token = parseCookies(req).yamato_session;
   try {
     const url = new URL(req.url || "/", "http://localhost");
@@ -1482,7 +1483,8 @@ wss.on("connection", async (ws, req) => {
     return;
   }
 
-  ws.on("message", async raw => {
+  ws.on("message", raw => {
+    (async () => {
     let data;
     try {
       data = JSON.parse(raw.toString());
@@ -1803,6 +1805,9 @@ wss.on("connection", async (ws, req) => {
       }
       return;
     }
+    })().catch(error => {
+      console.error("WebSocket message handler error:", error);
+    });
   });
 
   ws.on("close", () => {
@@ -1810,10 +1815,18 @@ wss.on("connection", async (ws, req) => {
     // Leave silently. The member list reflects the offline state.
     sendUserList();
   });
+  })().catch(error => {
+    console.error("WebSocket connection handler error:", error);
+    try { ws.close(1011, "Internal server error"); } catch {}
+  });
 });
 
 app.get(/.*/, (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
+});
+
+process.on("unhandledRejection", reason => {
+  console.error("Unhandled promise rejection:", reason);
 });
 
 ensureDefaultData()
