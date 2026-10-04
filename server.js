@@ -137,7 +137,8 @@ async function getAccountBySessionToken(token) {
         bio,
         avatar_url,
         created_at,
-        last_login_at
+        last_login_at,
+        is_global_admin
       )
     `)
     .eq("token_hash", tokenHash)
@@ -269,7 +270,7 @@ app.post("/api/login", async (req, res) => {
       .from("accounts")
       .select(`
         id, username, display_name, bio, avatar_url, created_at, last_login_at,
-        password_hash
+        is_global_admin, password_hash
       `)
       .eq("username", username)
       .limit(1)
@@ -368,7 +369,7 @@ app.patch("/api/profile", requireAccount, async (req, res) => {
       .from("accounts")
       .update({ display_name: displayName, bio })
       .eq("id", req.account.id)
-      .select("id, username, display_name, bio, avatar_url, created_at, last_login_at")
+      .select("id, username, display_name, bio, avatar_url, created_at, last_login_at, is_global_admin")
       .single();
 
     if (error) throw error;
@@ -508,7 +509,7 @@ app.post("/api/profile/avatar", requireAccount, avatarUpload.single("file"), asy
       .from("accounts")
       .update({ avatar_url: avatarUrl })
       .eq("id", req.account.id)
-      .select("id, username, display_name, bio, avatar_url, created_at, last_login_at")
+      .select("id, username, display_name, bio, avatar_url, created_at, last_login_at, is_global_admin")
       .single();
 
     if (error) throw error;
@@ -528,14 +529,13 @@ app.post("/api/profile/avatar", requireAccount, avatarUpload.single("file"), asy
 app.get("/api/servers", requireAccount, async (req, res) => {
   try {
     await refreshServerCache();
-    res.json({
-      ok: true,
-      servers: serverCache.map(server => ({
-        ...server,
-        canManage: canManageServer(req.account, server),
-        channels: channelCache.filter(c => String(c.server_id) === String(server.id))
-      }))
-    });
+    const servers = await Promise.all(serverCache.map(async server => ({
+      ...server,
+      canManage: await canManageServer(req.account, server),
+      role: await getServerRole(req.account.id, server.id) || (isGlobalAdmin(req.account) ? "admin" : null),
+      channels: channelCache.filter(c => String(c.server_id) === String(server.id))
+    })));
+    res.json({ok:true, servers});
   } catch (error) {
     console.error("Server list error:", error);
     res.status(500).json({ ok:false, error:"サーバー一覧を取得できませんでした" });
@@ -552,6 +552,7 @@ app.post("/api/servers", requireAccount, async (req, res) => {
       .select("id,name,description,icon_url,owner_account_id")
       .single();
     if (error) throw error;
+    await ensureServerMember(req.account.id, server.id, "admin");
     const { data: channel, error: ce } = await supabase
       .from("channels")
       .insert({ server_id: server.id, name: "general" })
@@ -570,7 +571,7 @@ app.patch("/api/servers/:id", requireAccount, async (req,res)=>{
   try {
     const server=getServer(req.params.id);
     if(!server) return res.status(404).json({ok:false,error:"サーバーが見つかりません"});
-    if(!canManageServer(req.account,server)) return res.status(403).json({ok:false,error:"サーバーを変更する権限がありません"});
+    if(!(await canManageServer(req.account,server))) return res.status(403).json({ok:false,error:"サーバーを変更する権限がありません"});
     const name=String(req.body.name ?? server.name).trim().slice(0,40);
     const description=String(req.body.description ?? server.description ?? "").trim().slice(0,300);
     if(!name) return res.status(400).json({ok:false,error:"サーバー名を入力してください"});
@@ -588,7 +589,7 @@ app.post("/api/servers/:id/icon", requireAccount, avatarUpload.single("file"), a
   try {
     const server=getServer(req.params.id);
     if(!server) return res.status(404).json({ok:false,error:"サーバーが見つかりません"});
-    if(!canManageServer(req.account,server)) return res.status(403).json({ok:false,error:"サーバーを変更する権限がありません"});
+    if(!(await canManageServer(req.account,server))) return res.status(403).json({ok:false,error:"サーバーを変更する権限がありません"});
     if(!req.file || !String(req.file.mimetype||"").startsWith("image/")) return res.status(400).json({ok:false,error:"サーバーアイコンには画像を選択してください"});
     const storagePath=makeStoragePath(req.account.id,safeFileName(req.file.originalname),"server-icons");
     await putB2Object(storagePath,req.file.buffer,req.file.mimetype);
@@ -607,13 +608,16 @@ app.delete("/api/servers/:id", requireAccount, async (req,res) => {
   try {
     const server=getServer(req.params.id);
     if(!server) return res.status(404).json({ok:false,error:"サーバーが見つかりません"});
-    if(!canManageServer(req.account,server)) return res.status(403).json({ok:false,error:"このサーバーを削除する権限がありません"});
+    if(!(await canManageServer(req.account,server))) return res.status(403).json({ok:false,error:"このサーバーを削除する権限がありません"});
     const channelsForServer=channelCache.filter(c=>String(c.server_id)===String(server.id));
+    // Server deletion is destructive by design: remove messages first, then channels.
+    // The old UI forced users to manually empty every channel, which was confusing.
     for(const ch of channelsForServer){
-      const {count,error}=await supabase.from("messages").select("id",{count:"exact",head:true}).eq("channel_id",ch.id);
-      if(error) throw error;
-      if((count||0)>0) return res.status(409).json({ok:false,error:"メッセージが残っているサーバーは削除できません。先にチャンネルを整理してください"});
+      const {error:me}=await supabase.from("messages").delete().eq("channel_id",ch.id);
+      if(me) throw me;
     }
+    const {error:cm}=await supabase.from("server_members").delete().eq("server_id",server.id);
+    if(cm && cm.code !== "42P01") throw cm;
     const {error}=await supabase.from("channels").delete().eq("server_id",server.id);
     if(error) throw error;
     const {error:se}=await supabase.from("servers").delete().eq("id",server.id);
@@ -630,7 +634,7 @@ app.post("/api/servers/:serverId/channels", requireAccount, async (req,res)=>{
   try{
     const server=getServer(req.params.serverId);
     if(!server) return res.status(404).json({ok:false,error:"サーバーが見つかりません"});
-    if(!canManageServer(req.account,server)) return res.status(403).json({ok:false,error:"チャンネルを管理する権限がありません"});
+    if(!(await canManageServer(req.account,server))) return res.status(403).json({ok:false,error:"チャンネルを管理する権限がありません"});
     const name=String(req.body.name||"").trim().replace(/^#+/,"").slice(0,40);
     if(!name) return res.status(400).json({ok:false,error:"チャンネル名を入力してください"});
     const {data:channel,error}=await supabase.from("channels").insert({server_id:server.id,name}).select("id,server_id,name").single();
@@ -648,12 +652,12 @@ app.delete("/api/channels/:id", requireAccount, async (req,res)=>{
     const channel=getChannel(req.params.id);
     if(!channel) return res.status(404).json({ok:false,error:"チャンネルが見つかりません"});
     const server=getServer(channel.server_id);
-    if(!canManageServer(req.account,server)) return res.status(403).json({ok:false,error:"チャンネルを削除する権限がありません"});
+    if(!(await canManageServer(req.account,server))) return res.status(403).json({ok:false,error:"チャンネルを削除する権限がありません"});
     const channelCount=channelCache.filter(c=>String(c.server_id)===String(server.id)).length;
     if(channelCount<=1) return res.status(400).json({ok:false,error:"サーバーには最低1つのチャンネルが必要です"});
-    const {count,error:countError}=await supabase.from("messages").select("id",{count:"exact",head:true}).eq("channel_id",channel.id);
-    if(countError) throw countError;
-    if((count||0)>0) return res.status(409).json({ok:false,error:"メッセージがあるチャンネルは削除できません"});
+    // Deleting a channel also deletes its messages. No manual cleanup step.
+    const {error:messageDeleteError}=await supabase.from("messages").delete().eq("channel_id",channel.id);
+    if(messageDeleteError) throw messageDeleteError;
     const {error}=await supabase.from("channels").delete().eq("id",channel.id);
     if(error) throw error;
     await refreshServerCache();
@@ -663,6 +667,64 @@ app.delete("/api/channels/:id", requireAccount, async (req,res)=>{
     res.status(500).json({ok:false,error:"チャンネルを削除できませんでした"});
   }
 });
+
+// Server member/admin role management.
+app.get("/api/servers/:id/members", requireAccount, async (req,res)=>{
+  try{
+    const server=getServer(req.params.id);
+    if(!server) return res.status(404).json({ok:false,error:"サーバーが見つかりません"});
+    await ensureServerMember(req.account.id, server.id, (server.owner_account_id===req.account.id || isGlobalAdmin(req.account)) ? "admin" : "member");
+    const {data,error}=await supabase.from("server_members")
+      .select("server_id,user_id,role,accounts(id,username,display_name,bio,avatar_url)")
+      .eq("server_id",server.id).order("role",{ascending:true});
+    if(error) throw error;
+    res.json({ok:true,members:(data||[]).map(x=>({serverId:x.server_id,accountId:x.user_id,role:x.role,user:x.accounts}))});
+  }catch(error){ console.error("Server members error:",error); res.status(500).json({ok:false,error:"メンバー一覧を取得できませんでした"}); }
+});
+
+app.patch("/api/servers/:serverId/members/:accountId", requireAccount, async (req,res)=>{
+  try{
+    const server=getServer(req.params.serverId);
+    if(!server) return res.status(404).json({ok:false,error:"サーバーが見つかりません"});
+    if(!(await canManageServer(req.account,server))) return res.status(403).json({ok:false,error:"管理者権限が必要です"});
+    const targetId=String(req.params.accountId);
+    const role=String(req.body.role||"").toLowerCase()==="admin" ? "admin" : "member";
+    if(String(server.owner_account_id)===targetId && role!=="admin") return res.status(400).json({ok:false,error:"サーバー所有者はメンバーに変更できません"});
+    const {data:target,error:te}=await supabase.from("accounts").select("id,username,display_name").eq("id",targetId).maybeSingle();
+    if(te) throw te; if(!target) return res.status(404).json({ok:false,error:"ユーザーが見つかりません"});
+    await ensureServerMember(targetId,server.id,role);
+    res.json({ok:true,accountId:targetId,role});
+  }catch(error){ console.error("Role update error:",error); res.status(500).json({ok:false,error:"権限を変更できませんでした"}); }
+});
+
+app.get("/api/notifications", requireAccount, async (req,res)=>{
+  try{
+    const {data,error}=await supabase.from("notifications").select("id,type,message,server_id,channel_id,actor_id,is_read,created_at").eq("recipient_id",req.account.id).order("created_at",{ascending:false}).limit(50);
+    if(error) throw error;
+    const notifications=(data||[]).map(n=>({id:n.id,type:n.type,title:n.type==="mention"?"メンション":"通知",body:n.message||"",server_id:n.server_id,channel_id:n.channel_id,read_at:n.is_read?new Date(n.created_at).toISOString():null,created_at:n.created_at}));
+    res.json({ok:true,notifications,unread:notifications.filter(n=>!n.read_at).length});
+  }catch(error){ console.error("Notification load error:",error); res.status(500).json({ok:false,error:"通知を取得できませんでした"}); }
+});
+app.post("/api/notifications/read", requireAccount, async (req,res)=>{
+  try{
+    const {error}=await supabase.from("notifications").update({is_read:true}).eq("recipient_id",req.account.id).eq("is_read",false);
+    if(error) throw error;
+    res.json({ok:true});
+  }catch(error){ console.error("Notification read error:",error); res.status(500).json({ok:false,error:"通知を既読にできませんでした"}); }
+});
+
+async function createMentionNotifications(text, message, serverId, channelId){
+  const names=[...String(text||"").matchAll(/@([A-Za-z0-9_]{3,24})/g)].map(m=>m[1].toLowerCase());
+  if(!names.length) return;
+  const unique=[...new Set(names)];
+  const {data:targets,error}=await supabase.from("accounts").select("id,username").in("username",unique);
+  if(error) { console.error("Mention lookup error:",error); return; }
+  const rows=(targets||[]).filter(t=>String(t.id)!==String(message.accountId)).map(t=>({
+    recipient_id:t.id,type:"mention",message:`${message.user} さんがあなたをメンションしました: ${String(text).slice(0,450)}`,server_id:serverId,channel_id:channelId,actor_id:message.accountId
+  }));
+  if(rows.length){ const {error:ne}=await supabase.from("notifications").insert(rows); if(ne) console.error("Mention notification error:",ne); }
+  for(const t of targets||[]){ if(String(t.id)!==String(message.accountId)) await sendToAccount(t.id,{type:"notification",notification:{title:`${message.user} さんがあなたをメンションしました`,body:String(text).slice(0,500),serverId,channelId,messageId:message.id}}); }
+}
 
 app.post("/api/upload", requireAccount, upload.single("file"), async (req, res) => {
   try {
@@ -740,8 +802,43 @@ function getServer(serverId) {
 function getChannel(channelId) {
   return channelCache.find(c => String(c.id) === String(channelId)) || null;
 }
-function canManageServer(account, server) {
-  return !!server && !!server.owner_account_id && String(server.owner_account_id) === String(account.id);
+
+function isGlobalAdmin(account) {
+  return !!account?.is_global_admin;
+}
+
+async function getServerRole(accountId, serverId) {
+  if (!accountId || !serverId) return null;
+  const { data, error } = await supabase
+    .from("server_members")
+    .select("role")
+    .eq("user_id", accountId)
+    .eq("server_id", serverId)
+    .maybeSingle();
+  if (error) {
+    if (error.code === "42P01") return null;
+    throw error;
+  }
+  return data?.role || null;
+}
+
+async function ensureServerMember(accountId, serverId, role="member") {
+  const {data:existing,error:findError}=await supabase.from("server_members")
+    .select("server_id,user_id,role").eq("server_id",serverId).eq("user_id",accountId).maybeSingle();
+  if(findError) throw findError;
+  if(existing) return existing;
+  const {data,error}=await supabase.from("server_members")
+    .insert({server_id:serverId,user_id:accountId,role})
+    .select("server_id,user_id,role").single();
+  if(error) throw error;
+  return data;
+}
+
+async function canManageServer(account, server) {
+  if (!server) return false;
+  if (isGlobalAdmin(account)) return true;
+  if (server.owner_account_id && String(server.owner_account_id) === String(account.id)) return true;
+  return (await getServerRole(account.id, server.id)) === "admin";
 }
 
 async function ensureDefaultData() {
@@ -1360,17 +1457,19 @@ wss.on("connection", async (ws, req) => {
         displayName: account.display_name,
         bio: account.bio,
         chatUserId: dbUser.id,
-        avatarUrl: account.avatar_url
+        avatarUrl: account.avatar_url,
+        isGlobalAdmin: !!account.is_global_admin
       },
-      servers: serverCache.map(server => ({
+      servers: await Promise.all(serverCache.map(async server => ({
         id: server.id,
         name: server.name,
         description: server.description || "",
         iconUrl: server.icon_url || null,
         ownerAccountId: server.owner_account_id,
-        canManage: canManageServer(account, server),
+        canManage: await canManageServer(account, server),
+        role: await getServerRole(account.id, server.id) || (isGlobalAdmin(account) ? "admin" : null),
         channels: channelCache.filter(c => String(c.server_id) === String(server.id)).map(c => ({id:c.id,name:c.name}))
-      })),
+      }))),
       channels: channelCache.map(c => ({ id: c.id, serverId: c.server_id, name: c.name })),
       currentChannel: String(defaultChannel.id),
       messages: history
@@ -1396,6 +1495,9 @@ wss.on("connection", async (ws, req) => {
       const channel = String(data.channel || "");
       const channelInfo = getChannel(channel);
       if (!channelInfo) return;
+      const serverInfo = getServer(channelInfo.server_id);
+      if (!serverInfo) return;
+      await ensureServerMember(user.accountId, serverInfo.id, (String(serverInfo.owner_account_id)===String(user.accountId) || isGlobalAdmin(account)) ? "admin" : "member");
 
       user.channel = channel;
       user.server = String(channelInfo.server_id);
@@ -1509,6 +1611,7 @@ wss.on("connection", async (ws, req) => {
     if (data.type === "message") {
       const text = String(data.text || "").trim().slice(0, 2000);
       const channel = user.channel;
+      const channelInfo = getChannel(channel);
       const channelId = channel;
       const rawAttachments = Array.isArray(data.attachments)
         ? data.attachments.slice(0, 10)
@@ -1608,8 +1711,8 @@ wss.on("connection", async (ws, req) => {
             message
           }));
         }
-
       }
+      await createMentionNotifications(text, {...message,accountId:user.accountId}, channelInfo?.server_id || user.server, channel);
 
     }
 

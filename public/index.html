@@ -59,8 +59,8 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .header{height:60px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 18px;font-weight:700}
 .header small{margin-left:10px;color:var(--muted);font-weight:400}
 .messages{flex:1;min-height:0;overflow:auto;padding:18px 22px}
-.message{display:flex;gap:11px;margin:0 0 16px;position:relative;align-items:flex-start;clear:both}.message.continuation{margin-top:-10px;margin-bottom:2px}.message.continuation .msghead{display:none}.message.continuation .avatar{visibility:hidden}.message.continuation .text{margin-top:0}.message .avatar{cursor:pointer}.message .avatar:hover{filter:brightness(1.12)}
-.message-actions{display:inline-flex;gap:4px;margin-left:8px;opacity:1;pointer-events:auto}
+.message{display:flex;gap:11px;margin:0 0 16px;position:relative;align-items:flex-start;clear:both}.message.continuation{margin-top:-10px;margin-bottom:2px}.message.continuation .msghead{display:none}.message.continuation .avatar{visibility:hidden}.message.continuation .text{margin-top:0}.message.continuation:hover{background:rgba(255,255,255,.025);border-radius:6px}.message .avatar{cursor:pointer}.message .avatar:hover{filter:brightness(1.12)}
+.message-actions{position:absolute;right:8px;top:-10px;display:flex;gap:4px;padding:3px;background:#1f222b;border:1px solid #303441;border-radius:7px;box-shadow:0 2px 8px rgba(0,0,0,.35);opacity:0;pointer-events:none;transform:translateY(2px);transition:opacity .12s ease,transform .12s ease;z-index:5}.message:hover .message-actions,.message:focus-within .message-actions{opacity:1;pointer-events:auto;transform:translateY(0)}
 .message-action{border:0;background:#2a2e39;color:#cbd1df;border-radius:5px;width:25px;height:23px;cursor:pointer;font-size:13px;display:grid;place-items:center;padding:0}
 .message-action:hover{background:#3a3f4d;color:#fff}
 .message-action.delete:hover{background:#a83d45}
@@ -148,7 +148,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 @media(max-width:800px){.app{grid-template-columns:170px 1fr}.members{display:none}}
 @media(max-width:560px){.pending-grid{grid-template-columns:repeat(2,minmax(0,1fr));padding-right:34px}.pending-card img,.pending-file{height:100px}}
 @media(max-width:560px){.app{grid-template-columns:1fr}.sidebar{display:none}.messages{padding:14px}.attachment{width:100%}.attachment-image{max-height:260px}}
-</style>
+.notifications{position:relative}.notification-btn{border:0;background:transparent;color:#ddd;font-size:20px;cursor:pointer;position:relative}.notification-badge{position:absolute;right:-5px;top:-5px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:#ed4245;color:#fff;font-size:10px;display:grid;place-items:center}.notification-panel{position:absolute;right:12px;top:52px;width:340px;max-height:430px;overflow:auto;background:#17191f;border:1px solid var(--line);border-radius:10px;z-index:30;box-shadow:0 15px 50px #0009}.notification-head{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--line);font-weight:700}.notification-item{padding:12px;border-bottom:1px solid #262934;cursor:pointer}.notification-item.unread{background:#20232c}.notification-item small{display:block;color:var(--muted);margin-top:4px}.role-btn{background:var(--accent)!important}.server-member-role{font-size:11px;color:var(--muted);margin-top:3px}.modal-close{position:absolute;right:10px;top:8px;border:0;background:transparent;color:#bbb;font-size:24px;cursor:pointer}.server-profile-wrap{position:relative}
 </head>
 <body>
 <div id="startupOverlay" class="startup-overlay">
@@ -241,7 +241,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
       <div id="userCardUsername" class="user-card-username"></div>
       <div id="userCardStatus" class="user-card-status"></div>
       <div id="userCardBio" class="user-card-bio"></div>
-      <div id="userCardActions" class="user-card-actions"></div>
+      <div id="userCardActions" class="user-card-actions"></div><div id="userCardServerRole" class="server-member-role"></div>
     </div>
   </div>
 </div>
@@ -263,7 +263,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
   </aside>
 
   <main class="main">
-    <div class="header"># <span id="channelName">general</span><small>リアルタイムチャット</small></div>
+    <div class="header"><div># <span id="channelName">general</span><small>リアルタイムチャット</small></div><div class="notifications"><button id="notificationButton" class="notification-btn" title="通知">🔔<span id="notificationBadge" class="notification-badge hidden">0</span></button><div id="notificationPanel" class="notification-panel hidden"></div></div></div>
     <div id="messages" class="messages"></div>
     <div class="composer">
       <div id="pendingAttachment" class="pending-attachment">
@@ -288,7 +288,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 </div>
 
 <div id="serverProfilePanel" class="profile-panel hidden">
-  <h3>サーバープロフィール</h3>
+  <button class="modal-close" id="serverProfileClose" type="button">×</button><h3>サーバープロフィール</h3>
   <div class="profile-avatar-preview" id="serverProfileIcon">S</div>
   <div class="row"><div class="label">サーバー名</div><input id="serverProfileName" maxlength="40"></div>
   <div class="row"><div class="label">説明</div><textarea id="serverProfileDescription" maxlength="300"></textarea></div>
@@ -297,7 +297,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
   <button id="deleteServerButton" class="logout">サーバーを削除</button>
 </div>
 <div id="profilePanel" class="profile-panel hidden">
-  <h3>プロフィール</h3>
+  <button class="modal-close" id="profileClose" type="button">×</button><h3>プロフィール</h3>
   <div class="profile-avatar-preview" id="profileAvatar">?</div>
   <div class="row"><div class="label">表示名</div><div class="value" id="profileName"></div></div>
   <div class="row"><div class="label">ユーザー名</div><div class="value" id="profileUsername"></div></div>
@@ -318,6 +318,8 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 <script>
 let ws;
 let myId = "";
+let currentServerRole = "member";
+let notificationItems = [];
 let currentChannel = "";
 let currentServerId = "";
 let servers = [];
@@ -606,6 +608,7 @@ function updateServerHeader(server){
   const icon=$("serverIcon");
   setAvatarElement(icon, server.icon_url || server.iconUrl || null, server.name || "S");
   const canManage=!!server.canManage;
+  currentServerRole=server.role || (canManage ? "admin" : "member");
   $("serverSettingsButton").style.display=canManage ? "block" : "none";
   $("addChannelButton").style.display=canManage ? "block" : "none";
 }
@@ -657,7 +660,7 @@ function renderChannels(serverId, selectedChannelId) {
     el.onclick=()=>joinChannel(ch); row.appendChild(el);
     if(server.canManage){
       const del=document.createElement("button"); del.className="channel-delete"; del.textContent="×"; del.title="チャンネルを削除";
-      del.onclick=async e=>{e.stopPropagation(); if(confirm(`「${ch.name}」を削除しますか？`)){try{await api(`/api/channels/${ch.id}`,{method:"DELETE"}); if(String(currentChannel)===String(ch.id)) currentChannel=""; await loadServers(currentServerId);}catch(err){alert(err.message)}}};
+      del.onclick=async e=>{e.stopPropagation(); if(confirm(`「${ch.name}」を削除しますか？\n\nこのチャンネル内のメッセージもすべて削除されます。続行しますか？`)){try{await api(`/api/channels/${ch.id}`,{method:"DELETE"}); if(String(currentChannel)===String(ch.id)) currentChannel=""; await loadServers(currentServerId);}catch(err){alert(err.message)}}};
       row.appendChild(del);
     }
     list.appendChild(row);
@@ -707,7 +710,7 @@ function connect() {
     if(currentChannel) ws.send(JSON.stringify({type:"join_channel",channel:currentChannel}));
   };
 
-  ws.onmessage = e => {
+  ws.onmessage = async e => {
     const data = JSON.parse(e.data);
 
     if (data.type === "auth_required") {
@@ -823,6 +826,10 @@ function connect() {
 
     if (data.type === "users") {
       renderUsers(data.users);
+    }
+    if (data.type === "notification") {
+      await loadNotifications();
+      const old=document.title; document.title="🔔 通知 - Yamato Chat"; setTimeout(()=>document.title=old,3000);
     }
   };
 
@@ -950,6 +957,21 @@ async function openUserCard(username, anchorEl) {
       actions.appendChild(friend);
     }
 
+    // Server role controls: server admins and global admins can promote/demote members.
+    const roleBox=$("userCardServerRole"); roleBox.innerHTML="";
+    const activeServer=servers.find(s=>String(s.id)===String(currentServerId));
+    if(activeServer && u.id!==account?.id && (activeServer.canManage || (account?.isGlobalAdmin || account?.is_global_admin))) {
+      const roleBtn=document.createElement("button"); roleBtn.type="button"; roleBtn.className="role-btn";
+      let role="member";
+      try { const md=await api(`/api/servers/${activeServer.id}/members`); const found=(md.members||[]).find(x=>String(x.accountId)===String(u.id)); role=found?.role||"member"; } catch {}
+      roleBtn.textContent=role==="admin"?"memberにする":"adminにする";
+      roleBtn.addEventListener("click",async()=>{
+        roleBtn.disabled=true;
+        try{ const next=role==="admin"?"member":"admin"; await api(`/api/servers/${activeServer.id}/members/${u.id}`,{method:"PATCH",body:JSON.stringify({role:next})}); role=next; roleBtn.textContent=role==="admin"?"memberにする":"adminにする"; await loadServers(activeServer.id); }catch(err){alert(err.message)} finally{roleBtn.disabled=false;}
+      });
+      roleBox.appendChild(roleBtn);
+    }
+
     backdrop.classList.remove("hidden");
     const rect = anchorEl?.getBoundingClientRect();
     const cardW = Math.min(340, window.innerWidth - 28);
@@ -1014,8 +1036,12 @@ function appendMessage(m) {
     (!m.userId && m.user === (account.display_name || account.displayName))
   );
 
+  // 編集・削除はヘッダーの中に入れない。
+  // 連続投稿(continuation)ではヘッダーを非表示にするため、
+  // ヘッダー内に置くと2通目以降の操作ボタンまで消えてしまう。
+  let actions = null;
   if (own && m.id) {
-    const actions = document.createElement("span");
+    actions = document.createElement("div");
     actions.className = "message-actions";
 
     const edit = document.createElement("button");
@@ -1024,7 +1050,7 @@ function appendMessage(m) {
     edit.title = "編集";
     edit.textContent = "✎";
     edit.setAttribute("aria-label", "編集");
-    edit.addEventListener("click", () => editOwnMessage(m.id, m.text || "", m.dmConversationId || null));
+    edit.addEventListener("click", (e) => { e.stopPropagation(); editOwnMessage(m.id, m.text || "", m.dmConversationId || null); });
 
     const del = document.createElement("button");
     del.className = "message-action delete";
@@ -1032,10 +1058,9 @@ function appendMessage(m) {
     del.title = "削除";
     del.textContent = "🗑";
     del.setAttribute("aria-label", "削除");
-    del.addEventListener("click", () => deleteOwnMessage(m.id, m.dmConversationId || null));
+    del.addEventListener("click", (e) => { e.stopPropagation(); deleteOwnMessage(m.id, m.dmConversationId || null); });
 
     actions.append(edit,del);
-    head.appendChild(actions);
   }
 
   if (m.editedAt) {
@@ -1050,7 +1075,11 @@ function appendMessage(m) {
   if (m.text) {
     const text = document.createElement("div");
     text.className = "text";
-    text.textContent = m.text;
+    const parts=String(m.text).split(/(https?:\/\/[^\s<]+)/g);
+    parts.forEach(part=>{
+      if(/^https?:\/\//i.test(part)){ const a=document.createElement("a"); a.href=part; a.target="_blank"; a.rel="noopener noreferrer"; a.textContent=part; text.appendChild(a); }
+      else text.appendChild(document.createTextNode(part));
+    });
     body.appendChild(text);
   }
 
@@ -1120,6 +1149,7 @@ function appendMessage(m) {
     body.appendChild(attachmentWrap);
   }
   wrap.append(avatar, body);
+  if (actions) wrap.appendChild(actions);
   messages.appendChild(wrap);
   messages.scrollTop = messages.scrollHeight;
 }
@@ -1446,7 +1476,7 @@ $("saveServerProfileButton").addEventListener("click",async()=>{
 });
 $("deleteServerButton").addEventListener("click",async()=>{
   const server=servers.find(s=>String(s.id)===String(currentServerId)); if(!server?.canManage) return;
-  if(!confirm(`「${server.name}」を削除しますか？`)) return;
+  if(!confirm(`「${server.name}」を削除しますか？\n\nこの操作では、このサーバーの全チャンネルとチャンネル内メッセージも削除されます。続行しますか？`)) return;
   try{await api(`/api/servers/${server.id}`,{method:"DELETE"}); $("serverProfilePanel").classList.add("hidden"); currentServerId=""; currentChannel=""; await loadServers();}catch(err){alert(err.message)}
 });
 
@@ -1468,9 +1498,11 @@ $("addChannelButton").addEventListener("click", async () => {
 });
 
 
-$("profileButton").addEventListener("click", () => {
-  $("profilePanel").classList.toggle("hidden");
-});
+$("profileButton").addEventListener("click", () => { $("profilePanel").classList.toggle("hidden"); });
+$("profileClose").addEventListener("click",()=>$("profilePanel").classList.add("hidden"));
+$("serverProfileClose").addEventListener("click",()=>{ $("serverProfilePanel").classList.add("hidden"); $("serverIconInput").value=""; });
+$("notificationButton").addEventListener("click",async e=>{e.stopPropagation(); $("notificationPanel").classList.toggle("hidden"); if(!$("notificationPanel").classList.contains("hidden")) await loadNotifications();});
+document.addEventListener("click",e=>{ if(!e.target.closest(".notifications")) $("notificationPanel").classList.add("hidden"); });
 
 $("logoutButton").addEventListener("click", async () => {
   await api("/api/logout", {method:"POST"}).catch(()=>{});
@@ -1485,6 +1517,18 @@ $("userCardClose").addEventListener("click", closeUserCard);
 $("userCardBackdrop").addEventListener("click", e => {
   if (e.target === $("userCardBackdrop")) closeUserCard();
 });
+
+async function loadNotifications(){
+  try{ const d=await api("/api/notifications"); notificationItems=d.notifications||[]; renderNotifications(); }catch(err){ console.warn(err); }
+}
+function renderNotifications(){
+  const panel=$("notificationPanel"); panel.innerHTML="";
+  const head=document.createElement("div"); head.className="notification-head"; head.innerHTML='<span>通知</span><button type="button" id="markNotificationsRead">すべて既読</button>'; panel.appendChild(head);
+  if(!notificationItems.length){ const empty=document.createElement("div"); empty.className="notification-item"; empty.textContent="通知はありません"; panel.appendChild(empty); }
+  notificationItems.forEach(n=>{ const item=document.createElement("div"); item.className="notification-item"+(n.read_at?"":" unread"); const title=document.createElement("b"); title.textContent=n.title; const body=document.createElement("small"); body.textContent=n.body||""; item.append(title,body); item.onclick=()=>{ if(n.server_id){ const sv=servers.find(s=>String(s.id)===String(n.server_id)); const ch=sv?.channels?.find(c=>String(c.id)===String(n.channel_id)); if(ch) joinChannel(ch); } panel.classList.add("hidden"); }; panel.appendChild(item); });
+  const unread=notificationItems.filter(n=>!n.read_at).length; $("notificationBadge").textContent=String(unread); $("notificationBadge").classList.toggle("hidden",unread===0);
+  $("markNotificationsRead")?.addEventListener("click",async()=>{await api("/api/notifications/read",{method:"POST"}); await loadNotifications();});
+}
 
 async function waitForBackend() {
   const overlay = $("startupOverlay");
