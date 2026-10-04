@@ -21,7 +21,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .brand span{color:var(--accent)}
 .server-head{padding:10px;border-bottom:1px solid var(--line);display:flex;gap:6px;align-items:center}.server-icon{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:#2a2f3d;color:#fff;font-weight:800;overflow:hidden;flex:none}.server-icon img{width:100%;height:100%;object-fit:cover}.server-head-actions{display:flex;gap:2px}.server-settings{border:0;background:transparent;color:var(--muted);cursor:pointer;width:30px;height:30px;border-radius:6px}.server-settings:hover{background:var(--hover);color:#fff}.server-select{display:none;flex:1;min-width:0;background:var(--panel2);color:#fff;border:1px solid var(--line);border-radius:7px;padding:9px;font-weight:700}.server-add,.channel-add,.channel-delete{border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:6px}.server-add{font-size:20px;width:34px;height:34px}.server-add:hover,.channel-add:hover{background:var(--hover);color:#fff}.channels{padding:10px;overflow:auto}.channel-tools{display:flex;align-items:center;justify-content:space-between;padding:7px 8px 4px}.channel-tools .section{padding:0}.channel-row{display:flex;align-items:center;gap:2px}.channel-row .channel{flex:1}.channel-delete{width:25px;height:25px}.channel-delete:hover{background:#7d343d;color:#fff}
 .section{font-size:11px;color:var(--muted);font-weight:700;padding:8px}
-.channel{padding:10px 12px;border-radius:7px;color:#c8ced9;cursor:pointer;margin:2px 0}
+.channel{padding:10px 12px;border-radius:7px;color:#c8ced9;cursor:pointer;margin:2px 0;display:flex;align-items:center;gap:8px}.channel-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.channel-indicator{width:7px;height:7px;border-radius:50%;background:#fff;display:none;flex:none;box-shadow:0 0 0 1px rgba(0,0,0,.15)}.channel-indicator.show{display:block}.channel-indicator.mention{background:#ed4245}
 .channel:hover,.channel.active{background:var(--hover);color:white}
 .me{margin-top:auto;padding:12px;border-top:1px solid var(--line);display:flex;gap:10px;align-items:center;cursor:pointer}
 .avatar{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--accent2);font-weight:700;flex:none}
@@ -59,7 +59,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .header{height:60px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 18px;font-weight:700}
 .header small{margin-left:10px;color:var(--muted);font-weight:400}
 .messages{flex:1;min-height:0;overflow:auto;padding:18px 22px}
-.message{display:flex;gap:11px;margin:0 0 16px;position:relative;align-items:flex-start;clear:both;border-radius:7px;padding:0}.message.mentioned{background:rgba(245,200,70,.16);box-shadow:inset 3px 0 0 #f2c94c;padding:5px 8px 5px 7px;margin-left:-8px;margin-right:-8px}.message.mentioned.continuation{margin-top:-5px}.message.continuation{margin-top:-10px;margin-bottom:2px}.message.continuation .msghead{display:none}.message.continuation .avatar{visibility:hidden}.message.continuation .text{margin-top:0}.message.continuation:hover{background:rgba(255,255,255,.025);border-radius:6px}.message .avatar{cursor:pointer}.message .avatar:hover{filter:brightness(1.12)}
+.message{display:flex;gap:11px;margin:0 0 16px;position:relative;align-items:flex-start;clear:both}.message.continuation{margin-top:-10px;margin-bottom:2px}.message.continuation .msghead{display:none}.message.continuation .avatar{visibility:hidden}.message.continuation .text{margin-top:0}.message.continuation:hover{background:rgba(255,255,255,.025);border-radius:6px}.message .avatar{cursor:pointer}.message .avatar:hover{filter:brightness(1.12)}
 .message-actions{position:absolute;right:8px;top:-10px;display:flex;gap:4px;padding:3px;background:#1f222b;border:1px solid #303441;border-radius:7px;box-shadow:0 2px 8px rgba(0,0,0,.35);opacity:0;pointer-events:none;transform:translateY(2px);transition:opacity .12s ease,transform .12s ease;z-index:5}.message:hover .message-actions,.message:focus-within .message-actions{opacity:1;pointer-events:auto;transform:translateY(0)}
 .message-action{border:0;background:#2a2e39;color:#cbd1df;border-radius:5px;width:25px;height:23px;cursor:pointer;font-size:13px;display:grid;place-items:center;padding:0}
 .message-action:hover{background:#3a3f4d;color:#fff}
@@ -148,7 +148,18 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 @media(max-width:800px){.app{grid-template-columns:170px 1fr}.members{display:none}}
 @media(max-width:560px){.pending-grid{grid-template-columns:repeat(2,minmax(0,1fr));padding-right:34px}.pending-card img,.pending-file{height:100px}}
 @media(max-width:560px){.app{grid-template-columns:1fr}.sidebar{display:none}.messages{padding:14px}.attachment{width:100%}.attachment-image{max-height:260px}}
-.notifications{position:relative}.notification-btn{border:0;background:transparent;color:#ddd;font-size:20px;cursor:pointer;position:relative}.notification-badge{position:absolute;right:-5px;top:-5px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:#ed4245;color:#fff;font-size:10px;display:grid;place-items:center}.notification-panel{position:absolute;right:12px;top:52px;width:340px;max-height:430px;overflow:auto;background:#17191f;border:1px solid var(--line);border-radius:10px;z-index:30;box-shadow:0 15px 50px #0009}.notification-head{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--line);font-weight:700}.notification-item{padding:12px;border-bottom:1px solid #262934;cursor:pointer}.notification-item.unread{background:#20232c} .mention{background:#5865f2;color:#fff;padding:0 3px;border-radius:3px;font-weight:600}.mention.everyone{background:#5865f2;color:#fff}.notification-item small{display:block;color:var(--muted);margin-top:4px}.role-btn{background:var(--accent)!important}.server-member-role{font-size:11px;color:var(--muted);margin-top:3px}.modal-close{position:absolute;right:10px;top:8px;border:0;background:transparent;color:#bbb;font-size:24px;cursor:pointer}.server-profile-wrap{position:relative}
+.notifications{position:relative}.notification-btn{border:0;background:transparent;color:#ddd;font-size:20px;cursor:pointer;position:relative}.notification-badge{position:absolute;right:-5px;top:-5px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:#ed4245;color:#fff;font-size:10px;display:grid;place-items:center}.notification-panel{position:absolute;right:12px;top:52px;width:340px;max-height:430px;overflow:auto;background:#17191f;border:1px solid var(--line);border-radius:10px;z-index:30;box-shadow:0 15px 50px #0009}.notification-head{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--line);font-weight:700}.notification-item{padding:12px;border-bottom:1px solid #262934;cursor:pointer}.notification-item.unread{background:#20232c} .mention{background:#5865f2;color:#fff;padding:0 2px;border-radius:3px}.notification-item small{display:block;color:var(--muted);margin-top:4px}.role-btn{background:var(--accent)!important}.server-member-role{font-size:11px;color:var(--muted);margin-top:3px}.modal-close{position:absolute;right:10px;top:8px;border:0;background:transparent;color:#bbb;font-size:24px;cursor:pointer}.server-profile-wrap{position:relative}
+.mention-menu{position:absolute;left:0;right:0;bottom:52px;max-height:300px;overflow:auto;background:#181a20;border:1px solid var(--line);border-radius:8px;box-shadow:0 12px 35px #0009;z-index:40;padding:6px;display:none}
+.mention-menu.show{display:block}
+.mention-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:6px;cursor:pointer;color:#fff}
+.mention-item:hover,.mention-item.active{background:#2b2f3a}
+.mention-item .mention-avatar{width:30px;height:30px;border-radius:50%;overflow:hidden;flex:0 0 30px;background:#5865f2;display:grid;place-items:center;font-size:13px}
+.mention-item .mention-avatar img{width:100%;height:100%;object-fit:cover}
+.mention-item .mention-main{min-width:0;display:flex;flex-direction:column}
+.mention-item .mention-name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mention-item .mention-username{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mention-item.everyone .mention-avatar{font-size:16px}
+
 </style>
 </head>
 <body>
@@ -276,6 +287,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
         <input type="file" id="fileInput" hidden multiple>
         <button type="button" class="attach-btn" id="attachButton" title="画像・ファイルを添付">＋</button>
         <textarea id="messageInput" maxlength="2000" rows="1" placeholder="# general にメッセージを送信" autocomplete="off"></textarea>
+        <div id="mentionMenu" class="mention-menu" role="listbox"></div>
         <button type="submit" class="send-btn">送信</button>
       </form>
       <div id="fileStatus" class="attachment-meta"></div>
@@ -312,7 +324,6 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
     <label for="avatarInput">アイコン</label>
     <input id="avatarInput" type="file" accept="image/*">
     <button id="saveProfileButton">プロフィールを保存</button>
-    <button id="globalAdminButton" class="role-btn" type="button">全体管理者になる</button>
     <button id="logoutButton" class="logout">ログアウト</button>
   </div>
 </div>
@@ -347,6 +358,38 @@ let viewMode = "channel";
 let currentDmId = null;
 let currentDmOther = null;
 let friendData = {friends:[],incoming:[],outgoing:[]};
+let mentionMembers = [];
+let mentionActiveIndex = 0;
+// Discord-style unread indicators: mention (red) takes priority over normal unread (white).
+const channelIndicators = new Map();
+
+function getChannelIndicator(channelId){
+  const key=String(channelId);
+  if(!channelIndicators.has(key)) channelIndicators.set(key,{mention:false,newMessage:false});
+  return channelIndicators.get(key);
+}
+function setChannelIndicator(channelId, type){
+  if(!channelId) return;
+  const state=getChannelIndicator(channelId);
+  if(type === "mention") state.mention=true;
+  else state.newMessage=true;
+  renderChannels(currentServerId, currentChannel);
+}
+function clearChannelIndicator(channelId){
+  if(!channelId) return;
+  channelIndicators.delete(String(channelId));
+  renderChannels(currentServerId, currentChannel);
+}
+function rebuildMentionIndicatorsFromNotifications(){
+  // Keep existing white unread markers, but refresh red mention markers from unread notifications.
+  for(const [id,state] of channelIndicators) state.mention=false;
+  for(const n of notificationItems){
+    if(!n.read_at && n.type === "mention" && n.channel_id){
+      getChannelIndicator(n.channel_id).mention=true;
+    }
+  }
+  renderChannels(currentServerId, currentChannel);
+}
 
 const $ = id => document.getElementById(id);
 const messages = $("messages");
@@ -399,12 +442,6 @@ function setAccount(data) {
   $("profileBio").textContent = account.bio || "自己紹介はまだありません";
   $("editDisplayName").value = displayName;
   $("editBio").value = account.bio || "";
-  const adminBtn=$("globalAdminButton");
-  if(adminBtn){
-    const isAdmin=!!(account.is_global_admin || account.isGlobalAdmin);
-    adminBtn.textContent=isAdmin ? "✓ 全体管理者" : "全体管理者になる";
-    adminBtn.disabled=isAdmin;
-  }
 }
 
 function backendUrl(url) {
@@ -679,7 +716,12 @@ function renderChannels(serverId, selectedChannelId) {
   const selected=selectedChannelId || currentChannel;
   (server.channels||[]).forEach(ch=>{
     const row=document.createElement("div"); row.className="channel-row";
-    const el=document.createElement("div"); el.className="channel"; el.dataset.channel=ch.id; el.textContent="# "+ch.name;
+    const el=document.createElement("div"); el.className="channel"; el.dataset.channel=ch.id;
+    const label=document.createElement("span"); label.className="channel-label"; label.textContent="# "+ch.name;
+    const indicator=document.createElement("span"); indicator.className="channel-indicator";
+    const indicatorState=getChannelIndicator(ch.id);
+    if(indicatorState.mention || indicatorState.newMessage){ indicator.classList.add("show"); if(indicatorState.mention) indicator.classList.add("mention"); }
+    el.append(label,indicator);
     if(String(ch.id)===String(selected)) el.classList.add("active");
     el.onclick=()=>joinChannel(ch); row.appendChild(el);
     if(server.canManage){
@@ -707,12 +749,74 @@ function joinChannel(ch) {
   currentServerId=String(ch.server_id || currentServerId);
   const server=servers.find(s=>String(s.id)===currentServerId);
   currentChannel=String(ch.id); viewMode="channel"; currentDmId=null; currentDmOther=null;
+  clearChannelIndicator(currentChannel);
   if(server) updateServerHeader(server);
   renderChannels(currentServerId,currentChannel);
   $("channelName").textContent=ch.name;
   $("messageInput").placeholder=`# ${ch.name} にメッセージを送信`;
   messages.innerHTML="";
+  loadMentionMembers(currentServerId);
+  closeMentionMenu();
   if(ws && ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({type:"join_channel",channel:ch.id}));
+}
+
+function closeMentionMenu(){
+  const menu=$("mentionMenu");
+  if(menu){ menu.classList.remove("show"); menu.innerHTML=""; }
+  mentionActiveIndex=0;
+}
+
+function renderMentionAvatar(el,user){
+  el.innerHTML="";
+  if(user?.avatar_url){ const img=document.createElement("img"); img.src=user.avatar_url; img.alt=""; el.appendChild(img); }
+  else el.textContent=(user?.display_name||user?.username||"?").slice(0,1).toUpperCase();
+}
+
+function mentionInsert(username){
+  const input=$("messageInput"), value=input.value, at=value.lastIndexOf("@");
+  if(at<0){ closeMentionMenu(); return; }
+  const before=value.slice(0,at), after=value.slice(input.selectionStart);
+  input.value=before+"@"+username+" "+after;
+  const pos=(before+"@"+username+" ").length;
+  input.focus(); input.setSelectionRange(pos,pos);
+  closeMentionMenu();
+}
+
+function showMentionSuggestions(query){
+  const menu=$("mentionMenu"); if(!menu) return;
+  const q=String(query||"").toLowerCase(), items=[];
+  if(!q || "everyone".includes(q)) items.push({everyone:true,username:"everyone",display_name:"everyone"});
+  for(const m of mentionMembers){
+    const u=String(m.user?.username||m.username||""), d=String(m.user?.display_name||m.display_name||u);
+    if(u && (!q || u.toLowerCase().includes(q) || d.toLowerCase().includes(q))) items.push({...m.user||m,username:u,display_name:d});
+  }
+  if(!items.length){ closeMentionMenu(); return; }
+  mentionActiveIndex=0; menu.innerHTML="";
+  items.forEach((item,i)=>{
+    const row=document.createElement("div"); row.className="mention-item"+(i===0?" active":"")+(item.everyone?" everyone":"");
+    const av=document.createElement("div"); av.className="mention-avatar";
+    if(item.everyone) av.textContent="@"; else renderMentionAvatar(av,item);
+    const main=document.createElement("div"); main.className="mention-main";
+    const name=document.createElement("div"); name.className="mention-name"; name.textContent=item.everyone?"everyone":item.display_name;
+    const uname=document.createElement("div"); uname.className="mention-username"; uname.textContent=item.everyone?"サーバー全員":"@"+item.username;
+    main.append(name,uname); row.append(av,main);
+    row.addEventListener("mousedown",e=>{e.preventDefault(); mentionInsert(item.username);});
+    menu.appendChild(row);
+  });
+  menu.classList.add("show");
+}
+
+function updateMentionSuggestions(){
+  const input=$("messageInput"), pos=input.selectionStart??input.value.length, before=input.value.slice(0,pos);
+  const match=before.match(/(?:^|\s)@([A-Za-z0-9_]{0,24})$/);
+  if(!match){ closeMentionMenu(); return; }
+  showMentionSuggestions(match[1]);
+}
+
+async function loadMentionMembers(serverId=currentServerId){
+  mentionMembers=[]; if(!serverId) return;
+  try{ const d=await api(`/api/servers/${serverId}/members`); mentionMembers=(d.members||[]).filter(m=>m.user?.username); }
+  catch(err){ console.warn("Mention member load failed",err); }
 }
 
 function connect() {
@@ -829,7 +933,8 @@ function connect() {
     }
 
     if (data.type === "message") {
-      if (data.channel === currentChannel) appendMessage(data.message);
+      if (String(data.channel) === String(currentChannel)) appendMessage(data.message);
+      else setChannelIndicator(data.channel, "message");
       return;
     }
 
@@ -852,6 +957,8 @@ function connect() {
       renderUsers(data.users);
     }
     if (data.type === "notification") {
+      const n=data.notification||{};
+      if(n.channelId && String(n.channelId)!==String(currentChannel)) setChannelIndicator(n.channelId, "mention");
       await loadNotifications();
       const old=document.title; document.title="🔔 通知 - Yamato Chat"; setTimeout(()=>document.title=old,3000);
     }
@@ -981,7 +1088,20 @@ async function openUserCard(username, anchorEl) {
       actions.appendChild(friend);
     }
 
-    $("userCardServerRole").innerHTML="";
+    // Server role controls: server admins and global admins can promote/demote members.
+    const roleBox=$("userCardServerRole"); roleBox.innerHTML="";
+    const activeServer=servers.find(s=>String(s.id)===String(currentServerId));
+    if(activeServer && u.id!==account?.id && (activeServer.canManage || (account?.isGlobalAdmin || account?.is_global_admin))) {
+      const roleBtn=document.createElement("button"); roleBtn.type="button"; roleBtn.className="role-btn";
+      let role="member";
+      try { const md=await api(`/api/servers/${activeServer.id}/members`); const found=(md.members||[]).find(x=>String(x.accountId)===String(u.id)); role=found?.role||"member"; } catch {}
+      roleBtn.textContent=role==="admin"?"memberにする":"adminにする";
+      roleBtn.addEventListener("click",async()=>{
+        roleBtn.disabled=true;
+        try{ const next=role==="admin"?"member":"admin"; await api(`/api/servers/${activeServer.id}/members/${u.id}`,{method:"PATCH",body:JSON.stringify({role:next})}); role=next; roleBtn.textContent=role==="admin"?"memberにする":"adminにする"; await loadServers(activeServer.id); }catch(err){alert(err.message)} finally{roleBtn.disabled=false;}
+      });
+      roleBox.appendChild(roleBtn);
+    }
 
     backdrop.classList.remove("hidden");
     const rect = anchorEl?.getBoundingClientRect();
@@ -997,32 +1117,9 @@ async function openUserCard(username, anchorEl) {
   }
 }
 
-function messageMentionsCurrentUser(rawText){
-  const raw=String(rawText||"");
-  if(/@everyone\b/i.test(raw)) return true;
-  const username=String(account?.username||"").trim();
-  return !!username && new RegExp("@"+username.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"\\b","i").test(raw);
-}
-
-function appendMentionText(container, rawText){
-  const raw=String(rawText||"");
-  const re=/@everyone\b|@[A-Za-z0-9_]{3,24}\b/g;
-  let last=0, match;
-  while((match=re.exec(raw))){
-    if(match.index>last) container.appendChild(document.createTextNode(raw.slice(last,match.index)));
-    const span=document.createElement("span");
-    span.className="mention"+(match[0].toLowerCase()==="@everyone"?" everyone":"");
-    span.textContent=match[0];
-    container.appendChild(span);
-    last=re.lastIndex;
-  }
-  if(last<raw.length) container.appendChild(document.createTextNode(raw.slice(last)));
-}
-
 function appendMessage(m) {
   const wrap = document.createElement("div");
   wrap.className = "message";
-  if(viewMode !== "dm" && messageMentionsCurrentUser(m.text)) wrap.classList.add("mentioned");
   wrap.dataset.messageId = m.id || "";
 
   // Discord-like message grouping: consecutive messages by the same user
@@ -1112,7 +1209,7 @@ function appendMessage(m) {
     const parts=String(m.text).split(/(https?:\/\/[^\s<]+)/g);
     parts.forEach(part=>{
       if(/^https?:\/\//i.test(part)){ const a=document.createElement("a"); a.href=part; a.target="_blank"; a.rel="noopener noreferrer"; a.textContent=part; text.appendChild(a); }
-      else appendMentionText(text, part);
+      else text.appendChild(document.createTextNode(part));
     });
     body.appendChild(text);
   }
@@ -1426,14 +1523,20 @@ $("messageInput").addEventListener("input", () => {
   const el = $("messageInput");
   el.style.height = "auto";
   el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+  updateMentionSuggestions();
 });
 
 $("messageInput").addEventListener("keydown", e => {
-  if (e.key !== "Enter") return;
-  if (e.shiftKey) {
-    // Native textarea behavior: Shift+Enter inserts a newline.
-    return;
+  const menu=$("mentionMenu");
+  if(menu?.classList.contains("show")){
+    const rows=[...menu.querySelectorAll(".mention-item")];
+    if(e.key==="ArrowDown" && rows.length){e.preventDefault();mentionActiveIndex=(mentionActiveIndex+1)%rows.length;rows.forEach((r,i)=>r.classList.toggle("active",i===mentionActiveIndex));return;}
+    if(e.key==="ArrowUp" && rows.length){e.preventDefault();mentionActiveIndex=(mentionActiveIndex-1+rows.length)%rows.length;rows.forEach((r,i)=>r.classList.toggle("active",i===mentionActiveIndex));return;}
+    if((e.key==="Enter"||e.key==="Tab")&&rows.length){e.preventDefault();rows[mentionActiveIndex].dispatchEvent(new MouseEvent("mousedown",{bubbles:true}));return;}
+    if(e.key==="Escape"){e.preventDefault();closeMentionMenu();return;}
   }
+  if (e.key !== "Enter") return;
+  if (e.shiftKey) return;
   e.preventDefault();
   $("messageForm").requestSubmit();
 });
@@ -1538,18 +1641,6 @@ $("serverProfileClose").addEventListener("click",()=>{ $("serverProfilePanel").c
 $("notificationButton").addEventListener("click",async e=>{e.stopPropagation(); $("notificationPanel").classList.toggle("hidden"); if(!$("notificationPanel").classList.contains("hidden")) await loadNotifications();});
 document.addEventListener("click",e=>{ if(!e.target.closest(".notifications")) $("notificationPanel").classList.add("hidden"); });
 
-$("globalAdminButton")?.addEventListener("click", async () => {
-  if(account?.is_global_admin || account?.isGlobalAdmin) return;
-  const password=prompt("全体管理者パスワードを入力してください");
-  if(password===null) return;
-  try{
-    const data=await api("/api/admin/claim",{method:"POST",body:JSON.stringify({password})});
-    setAccount(data.account);
-    await loadServers(currentServerId);
-    alert("全体管理者になりました。");
-  }catch(err){ alert(err.message); }
-});
-
 $("logoutButton").addEventListener("click", async () => {
   await api("/api/logout", {method:"POST"}).catch(()=>{});
   account = null;
@@ -1564,8 +1655,9 @@ $("userCardBackdrop").addEventListener("click", e => {
   if (e.target === $("userCardBackdrop")) closeUserCard();
 });
 
+let notificationsLoadedOnce = false;
 async function loadNotifications(){
-  try{ const d=await api("/api/notifications"); notificationItems=d.notifications||[]; renderNotifications(); }catch(err){ console.warn(err); }
+  try{ const d=await api("/api/notifications"); notificationItems=d.notifications||[]; renderNotifications(); if(!notificationsLoadedOnce){ notificationsLoadedOnce=true; rebuildMentionIndicatorsFromNotifications(); } }catch(err){ console.warn(err); }
 }
 function renderNotifications(){
   const panel=$("notificationPanel"); panel.innerHTML="";
@@ -1573,7 +1665,7 @@ function renderNotifications(){
   if(!notificationItems.length){ const empty=document.createElement("div"); empty.className="notification-item"; empty.textContent="通知はありません"; panel.appendChild(empty); }
   notificationItems.forEach(n=>{ const item=document.createElement("div"); item.className="notification-item"+(n.read_at?"":" unread"); const title=document.createElement("b"); title.textContent=n.title; const body=document.createElement("small"); body.textContent=n.body||""; item.append(title,body); item.onclick=()=>{ if(n.server_id){ const sv=servers.find(s=>String(s.id)===String(n.server_id)); const ch=sv?.channels?.find(c=>String(c.id)===String(n.channel_id)); if(ch) joinChannel(ch); } panel.classList.add("hidden"); }; panel.appendChild(item); });
   const unread=notificationItems.filter(n=>!n.read_at).length; $("notificationBadge").textContent=String(unread); $("notificationBadge").classList.toggle("hidden",unread===0);
-  $("markNotificationsRead")?.addEventListener("click",async()=>{await api("/api/notifications/read",{method:"POST"}); await loadNotifications();});
+  $("markNotificationsRead")?.addEventListener("click",async()=>{await api("/api/notifications/read",{method:"POST"}); for(const state of channelIndicators.values()) state.mention=false; renderChannels(currentServerId,currentChannel); await loadNotifications();});
 }
 
 async function waitForBackend() {

@@ -36,3 +36,9 @@ Existing servers, channels, accounts, and messages are preserved.
 既存DBが旧 `user_id -> chat_users.id` schema の場合は、同梱の `server_members_account_migration.sql` をSupabase SQL Editorで1回実行してください。
 
 また、`public/index.html` の `<style>` 閉じタグを修正済みです。
+
+
+### 全体管理者
+- Render環境変数 `YAMATO_ADMIN_PASSWORD` を設定してください。
+- Yamato Chatのプロフィールから「全体管理者になる」を押し、このパスワードを入力すると `accounts.is_global_admin` が有効になります。
+- サーバー個別の管理者権限は使用しません。サーバー/チャンネル管理は全体管理者だけが行えます。

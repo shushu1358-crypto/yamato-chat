@@ -16,6 +16,7 @@ const PORT = process.env.PORT || 3000;
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SECRET_KEY = process.env.SUPABASE_SECRET_KEY;
 const YAMATO_GATE_PASSWORD = process.env.YAMATO_GATE_PASSWORD;
+const YAMATO_ADMIN_PASSWORD = process.env.YAMATO_ADMIN_PASSWORD;
 
 if (!SUPABASE_URL || !SUPABASE_SECRET_KEY || !YAMATO_GATE_PASSWORD) {
   console.error("Missing SUPABASE_URL, SUPABASE_SECRET_KEY, or YAMATO_GATE_PASSWORD.");
@@ -311,6 +312,27 @@ app.get("/api/me", requireAccount, async (req, res) => {
   res.json({ ok: true, account: req.account });
 });
 
+app.post("/api/admin/claim", requireAccount, async (req, res) => {
+  try {
+    const password = String(req.body.password || "");
+    if (!verifyAdminPassword(password)) {
+      return res.status(403).json({ ok: false, error: "管理者パスワードが違います" });
+    }
+    const { data, error } = await supabase
+      .from("accounts")
+      .update({ is_global_admin: true })
+      .eq("id", req.account.id)
+      .select("id,username,display_name,bio,avatar_url,created_at,last_login_at,is_global_admin")
+      .single();
+    if (error) throw error;
+    req.account = data;
+    res.json({ ok: true, account: data });
+  } catch (error) {
+    console.error("Global admin claim error:", error);
+    res.status(500).json({ ok: false, error: "管理者権限の設定に失敗しました" });
+  }
+});
+
 // Public profile lookup for the Discord-style user card.
 // Only non-sensitive profile fields are returned.
 app.get("/api/users/:username", requireAccount, async (req, res) => {
@@ -532,7 +554,7 @@ app.get("/api/servers", requireAccount, async (req, res) => {
     const servers = await Promise.all(serverCache.map(async server => ({
       ...server,
       canManage: await canManageServer(req.account, server),
-      role: await getServerRole(req.account.id, server.id) || (isGlobalAdmin(req.account) ? "admin" : null),
+      role: isGlobalAdmin(req.account) ? "admin" : "member",
       channels: channelCache.filter(c => String(c.server_id) === String(server.id))
     })));
     res.json({ok:true, servers});
@@ -544,6 +566,7 @@ app.get("/api/servers", requireAccount, async (req, res) => {
 
 app.post("/api/servers", requireAccount, async (req, res) => {
   try {
+    if (!isGlobalAdmin(req.account)) return res.status(403).json({ok:false,error:"全体管理者のみサーバーを作成できます"});
     const name = String(req.body.name || "").trim().slice(0, 40);
     if (!name) return res.status(400).json({ok:false,error:"サーバー名を入力してください"});
     const { data: server, error } = await supabase
@@ -552,7 +575,7 @@ app.post("/api/servers", requireAccount, async (req, res) => {
       .select("id,name,description,icon_url,owner_account_id")
       .single();
     if (error) throw error;
-    await ensureServerMember(req.account.id, server.id, "admin");
+    await ensureServerMember(req.account.id, server.id, "member");
     const { data: channel, error: ce } = await supabase
       .from("channels")
       .insert({ server_id: server.id, name: "general" })
@@ -673,29 +696,16 @@ app.get("/api/servers/:id/members", requireAccount, async (req,res)=>{
   try{
     const server=getServer(req.params.id);
     if(!server) return res.status(404).json({ok:false,error:"サーバーが見つかりません"});
-    await ensureServerMember(req.account.id, server.id, (server.owner_account_id===req.account.id || isGlobalAdmin(req.account)) ? "admin" : "member");
+    await ensureServerMember(req.account.id, server.id, "member");
     const {data,error}=await supabase.from("server_members")
-      .select("server_id,account_id,role,accounts(id,username,display_name,bio,avatar_url)")
+      .select("server_id,account_id,accounts(id,username,display_name,bio,avatar_url)")
       .eq("server_id",server.id).order("role",{ascending:true});
     if(error) throw error;
-    res.json({ok:true,members:(data||[]).map(x=>({serverId:x.server_id,accountId:x.account_id,role:x.role,user:x.accounts}))});
+    res.json({ok:true,members:(data||[]).map(x=>({serverId:x.server_id,accountId:x.account_id,role:"member",user:x.accounts}))});
   }catch(error){ console.error("Server members error:",error); res.status(500).json({ok:false,error:"メンバー一覧を取得できませんでした"}); }
 });
 
-app.patch("/api/servers/:serverId/members/:accountId", requireAccount, async (req,res)=>{
-  try{
-    const server=getServer(req.params.serverId);
-    if(!server) return res.status(404).json({ok:false,error:"サーバーが見つかりません"});
-    if(!(await canManageServer(req.account,server))) return res.status(403).json({ok:false,error:"管理者権限が必要です"});
-    const targetId=String(req.params.accountId);
-    const role=String(req.body.role||"").toLowerCase()==="admin" ? "admin" : "member";
-    if(String(server.owner_account_id)===targetId && role!=="admin") return res.status(400).json({ok:false,error:"サーバー所有者はメンバーに変更できません"});
-    const {data:target,error:te}=await supabase.from("accounts").select("id,username,display_name").eq("id",targetId).maybeSingle();
-    if(te) throw te; if(!target) return res.status(404).json({ok:false,error:"ユーザーが見つかりません"});
-    await ensureServerMember(targetId,server.id,role);
-    res.json({ok:true,accountId:targetId,role});
-  }catch(error){ console.error("Role update error:",error); res.status(500).json({ok:false,error:"権限を変更できませんでした"}); }
-});
+app.patch("/api/servers/:serverId/members/:accountId", requireAccount, async (_req,res)=>res.status(410).json({ok:false,error:"サーバー個別の管理者権限は廃止されています"}));
 
 app.get("/api/notifications", requireAccount, async (req,res)=>{
   try{
@@ -901,10 +911,7 @@ async function ensureServerMember(accountId, serverId, role="member") {
 }
 
 async function canManageServer(account, server) {
-  if (!server) return false;
-  if (isGlobalAdmin(account)) return true;
-  if (server.owner_account_id && String(server.owner_account_id) === String(account.id)) return true;
-  return (await getServerRole(account.id, server.id)) === "admin";
+  return !!server && isGlobalAdmin(account);
 }
 
 async function ensureDefaultData() {
@@ -1065,6 +1072,12 @@ function verifyGatePassword(input) {
   return typeof input === "string" &&
     typeof YAMATO_GATE_PASSWORD === "string" &&
     input === YAMATO_GATE_PASSWORD;
+}
+
+function verifyAdminPassword(input) {
+  return typeof input === "string" &&
+    typeof YAMATO_ADMIN_PASSWORD === "string" &&
+    input === YAMATO_ADMIN_PASSWORD;
 }
 
 
@@ -1534,7 +1547,7 @@ wss.on("connection", (ws, req) => {
         iconUrl: server.icon_url || null,
         ownerAccountId: server.owner_account_id,
         canManage: await canManageServer(account, server),
-        role: await getServerRole(account.id, server.id) || (isGlobalAdmin(account) ? "admin" : null),
+        role: isGlobalAdmin(account) ? "admin" : "member",
         channels: channelCache.filter(c => String(c.server_id) === String(server.id)).map(c => ({id:c.id,name:c.name}))
       }))),
       channels: channelCache.map(c => ({ id: c.id, serverId: c.server_id, name: c.name })),
@@ -1565,7 +1578,7 @@ wss.on("connection", (ws, req) => {
       if (!channelInfo) return;
       const serverInfo = getServer(channelInfo.server_id);
       if (!serverInfo) return;
-      await ensureServerMember(user.accountId, serverInfo.id, (String(serverInfo.owner_account_id)===String(user.accountId) || isGlobalAdmin(account)) ? "admin" : "member");
+      await ensureServerMember(user.accountId, serverInfo.id, "member");
 
       user.channel = channel;
       user.server = String(channelInfo.server_id);
