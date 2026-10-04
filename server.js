@@ -61,7 +61,7 @@ app.use(express.json({ limit: "32kb" }));
 // Authentication is carried in the tab-specific Authorization header.
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
@@ -532,6 +532,7 @@ app.get("/api/servers", requireAccount, async (req, res) => {
       ok: true,
       servers: serverCache.map(server => ({
         ...server,
+        canManage: canManageServer(req.account, server),
         channels: channelCache.filter(c => String(c.server_id) === String(server.id))
       }))
     });
@@ -548,7 +549,7 @@ app.post("/api/servers", requireAccount, async (req, res) => {
     const { data: server, error } = await supabase
       .from("servers")
       .insert({ name, owner_account_id: req.account.id })
-      .select("id,name,owner_account_id")
+      .select("id,name,description,icon_url,owner_account_id")
       .single();
     if (error) throw error;
     const { data: channel, error: ce } = await supabase
@@ -558,10 +559,47 @@ app.post("/api/servers", requireAccount, async (req, res) => {
       .single();
     if (ce) throw ce;
     await refreshServerCache();
-    res.json({ok:true,server:{...server,channels:[channel]}});
+    res.json({ok:true,server:{...server,canManage:true,channels:[channel]}});
   } catch(error) {
     console.error("Server create error:",error);
     res.status(500).json({ok:false,error:"サーバーを作成できませんでした"});
+  }
+});
+
+app.patch("/api/servers/:id", requireAccount, async (req,res)=>{
+  try {
+    const server=getServer(req.params.id);
+    if(!server) return res.status(404).json({ok:false,error:"サーバーが見つかりません"});
+    if(!canManageServer(req.account,server)) return res.status(403).json({ok:false,error:"サーバーを変更する権限がありません"});
+    const name=String(req.body.name ?? server.name).trim().slice(0,40);
+    const description=String(req.body.description ?? server.description ?? "").trim().slice(0,300);
+    if(!name) return res.status(400).json({ok:false,error:"サーバー名を入力してください"});
+    const {data:updated,error}=await supabase.from("servers").update({name,description}).eq("id",server.id).select("id,name,description,icon_url,owner_account_id").single();
+    if(error) throw error;
+    await refreshServerCache();
+    res.json({ok:true,server:{...updated,canManage:true}});
+  } catch(error) {
+    console.error("Server update error:",error);
+    res.status(500).json({ok:false,error:"サーバー情報を変更できませんでした"});
+  }
+});
+
+app.post("/api/servers/:id/icon", requireAccount, avatarUpload.single("file"), async (req,res)=>{
+  try {
+    const server=getServer(req.params.id);
+    if(!server) return res.status(404).json({ok:false,error:"サーバーが見つかりません"});
+    if(!canManageServer(req.account,server)) return res.status(403).json({ok:false,error:"サーバーを変更する権限がありません"});
+    if(!req.file || !String(req.file.mimetype||"").startsWith("image/")) return res.status(400).json({ok:false,error:"サーバーアイコンには画像を選択してください"});
+    const storagePath=makeStoragePath(req.account.id,safeFileName(req.file.originalname),"server-icons");
+    await putB2Object(storagePath,req.file.buffer,req.file.mimetype);
+    const iconUrl=publicStorageUrl(storagePath,req);
+    const {data:updated,error}=await supabase.from("servers").update({icon_url:iconUrl}).eq("id",server.id).select("id,name,description,icon_url,owner_account_id").single();
+    if(error) throw error;
+    await refreshServerCache();
+    res.json({ok:true,server:{...updated,canManage:true}});
+  } catch(error) {
+    console.error("Server icon upload error:",error);
+    res.status(500).json({ok:false,error:"サーバーアイコンの変更に失敗しました"});
   }
 });
 
@@ -683,7 +721,7 @@ function sendUserList() {
 async function refreshServerCache() {
   const { data: servers, error: se } = await supabase
     .from("servers")
-    .select("id,name,owner_account_id")
+    .select("id,name,description,icon_url,owner_account_id")
     .order("id", { ascending: true });
   if (se) throw se;
   const { data: channels, error: ce } = await supabase
@@ -703,13 +741,13 @@ function getChannel(channelId) {
   return channelCache.find(c => String(c.id) === String(channelId)) || null;
 }
 function canManageServer(account, server) {
-  return !!server && (!server.owner_account_id || String(server.owner_account_id) === String(account.id));
+  return !!server && !!server.owner_account_id && String(server.owner_account_id) === String(account.id);
 }
 
 async function ensureDefaultData() {
   let { data: existingServer, error: serverSelectError } = await supabase
     .from("servers")
-    .select("id,name,owner_account_id")
+    .select("id,name,description,icon_url,owner_account_id")
     .eq("name", "Yamato Chat")
     .limit(1)
     .maybeSingle();
@@ -719,12 +757,33 @@ async function ensureDefaultData() {
   if (!serverId) {
     const { data: createdServer, error } = await supabase
       .from("servers")
-      .insert({ name: "Yamato Chat" })
-      .select("id,name,owner_account_id")
+      .insert({ name: "Yamato Chat", description: "Yamato Chatの公式サーバー" })
+      .select("id,name,description,icon_url,owner_account_id")
       .single();
     if (error) throw error;
     existingServer = createdServer;
     serverId = createdServer.id;
+  }
+
+  // Legacy Yamato Chat servers created before ownership support had no owner.
+  // Claim only the default Yamato Chat server for the first existing account.
+  if (existingServer && !existingServer.owner_account_id && existingServer.name === "Yamato Chat") {
+    const { data: firstAccount } = await supabase
+      .from("accounts")
+      .select("id")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (firstAccount) {
+      const { data: claimed } = await supabase
+        .from("servers")
+        .update({ owner_account_id: firstAccount.id })
+        .eq("id", existingServer.id)
+        .is("owner_account_id", null)
+        .select("id,name,description,icon_url,owner_account_id")
+        .maybeSingle();
+      if (claimed) existingServer = claimed;
+    }
   }
 
   const defaults = ["general", "雑談", "ゲーム"];
@@ -1306,7 +1365,10 @@ wss.on("connection", async (ws, req) => {
       servers: serverCache.map(server => ({
         id: server.id,
         name: server.name,
+        description: server.description || "",
+        iconUrl: server.icon_url || null,
         ownerAccountId: server.owner_account_id,
+        canManage: canManageServer(account, server),
         channels: channelCache.filter(c => String(c.server_id) === String(server.id)).map(c => ({id:c.id,name:c.name}))
       })),
       channels: channelCache.map(c => ({ id: c.id, serverId: c.server_id, name: c.name })),
@@ -1332,9 +1394,11 @@ wss.on("connection", async (ws, req) => {
 
     if (data.type === "join_channel") {
       const channel = String(data.channel || "");
-      if (!getChannel(channel)) return;
+      const channelInfo = getChannel(channel);
+      if (!channelInfo) return;
 
       user.channel = channel;
+      user.server = String(channelInfo.server_id);
       user.view = "channel";
       user.dmConversationId = null;
       const history = await getHistory(channel, user.dbUserId);
@@ -1342,6 +1406,7 @@ wss.on("connection", async (ws, req) => {
       ws.send(JSON.stringify({
         type: "channel_history",
         channel,
+        serverId: channelInfo.server_id,
         messages: history
       }));
 

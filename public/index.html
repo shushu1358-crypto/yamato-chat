@@ -19,7 +19,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .sidebar{border-right:1px solid var(--line);display:flex;flex-direction:column}
 .brand{height:60px;padding:18px;font-weight:800;border-bottom:1px solid var(--line)}
 .brand span{color:var(--accent)}
-.server-head{padding:10px;border-bottom:1px solid var(--line);display:flex;gap:6px;align-items:center}.server-select{display:none;flex:1;min-width:0;background:var(--panel2);color:#fff;border:1px solid var(--line);border-radius:7px;padding:9px;font-weight:700}.server-add,.channel-add,.channel-delete{border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:6px}.server-add{font-size:20px;width:34px;height:34px}.server-add:hover,.channel-add:hover{background:var(--hover);color:#fff}.channels{padding:10px;overflow:auto}.channel-tools{display:flex;align-items:center;justify-content:space-between;padding:7px 8px 4px}.channel-tools .section{padding:0}.channel-row{display:flex;align-items:center;gap:2px}.channel-row .channel{flex:1}.channel-delete{width:25px;height:25px}.channel-delete:hover{background:#7d343d;color:#fff}
+.server-head{padding:10px;border-bottom:1px solid var(--line);display:flex;gap:6px;align-items:center}.server-icon{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;background:#2a2f3d;color:#fff;font-weight:800;overflow:hidden;flex:none}.server-icon img{width:100%;height:100%;object-fit:cover}.server-head-actions{display:flex;gap:2px}.server-settings{border:0;background:transparent;color:var(--muted);cursor:pointer;width:30px;height:30px;border-radius:6px}.server-settings:hover{background:var(--hover);color:#fff}.server-select{display:none;flex:1;min-width:0;background:var(--panel2);color:#fff;border:1px solid var(--line);border-radius:7px;padding:9px;font-weight:700}.server-add,.channel-add,.channel-delete{border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:6px}.server-add{font-size:20px;width:34px;height:34px}.server-add:hover,.channel-add:hover{background:var(--hover);color:#fff}.channels{padding:10px;overflow:auto}.channel-tools{display:flex;align-items:center;justify-content:space-between;padding:7px 8px 4px}.channel-tools .section{padding:0}.channel-row{display:flex;align-items:center;gap:2px}.channel-row .channel{flex:1}.channel-delete{width:25px;height:25px}.channel-delete:hover{background:#7d343d;color:#fff}
 .section{font-size:11px;color:var(--muted);font-weight:700;padding:8px}
 .channel{padding:10px 12px;border-radius:7px;color:#c8ced9;cursor:pointer;margin:2px 0}
 .channel:hover,.channel.active{background:var(--hover);color:white}
@@ -249,7 +249,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
   <aside class="server-rail" id="serverRail"><button class="server-btn add" id="addServerRailButton" title="サーバーを作成">＋</button><div class="server-divider"></div></aside>
   <aside class="sidebar">
     <div class="brand">Yamato <span>Chat</span></div>
-    <div class="server-head"><div id="serverTitle" style="flex:1;min-width:0;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">サーバー</div><select id="serverSelect" class="server-select" aria-hidden="true" tabindex="-1"></select><button id="addServerButton" class="server-add" title="サーバーを作成">＋</button></div>
+    <div class="server-head"><div class="server-icon" id="serverIcon">S</div><div id="serverTitle" style="flex:1;min-width:0;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">サーバー</div><select id="serverSelect" class="server-select" aria-hidden="true" tabindex="-1"></select><div class="server-head-actions"><button id="serverSettingsButton" class="server-settings" title="サーバープロフィール">⚙</button><button id="addServerButton" class="server-add" title="サーバーを作成">＋</button></div></div>
     <div class="channels"><div class="channel-tools"><div class="section">CHANNELS</div><button id="addChannelButton" class="channel-add" title="チャンネルを追加">＋</button></div><div id="channelList"></div></div>
     <div class="social">
       <div class="social-head"><span>SOCIAL</span></div>
@@ -287,6 +287,15 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
   </aside>
 </div>
 
+<div id="serverProfilePanel" class="profile-panel hidden">
+  <h3>サーバープロフィール</h3>
+  <div class="profile-avatar-preview" id="serverProfileIcon">S</div>
+  <div class="row"><div class="label">サーバー名</div><input id="serverProfileName" maxlength="40"></div>
+  <div class="row"><div class="label">説明</div><textarea id="serverProfileDescription" maxlength="300"></textarea></div>
+  <div class="row"><div class="label">アイコン</div><input id="serverIconInput" type="file" accept="image/*"></div>
+  <button id="saveServerProfileButton">サーバープロフィールを保存</button>
+  <button id="deleteServerButton" class="logout">サーバーを削除</button>
+</div>
 <div id="profilePanel" class="profile-panel hidden">
   <h3>プロフィール</h3>
   <div class="profile-avatar-preview" id="profileAvatar">?</div>
@@ -385,10 +394,8 @@ function authHeaders(extra = {}) {
 
 async function api(url, options = {}) {
   const tabToken = sessionStorage.getItem("yamato_session_token") || "";
-  const headers = {
-    "Content-Type":"application/json",
-    ...(options.headers || {})
-  };
+  const headers = { ...(options.headers || {}) };
+  if (!(options.body instanceof FormData)) headers["Content-Type"] = "application/json";
   if (tabToken) headers.Authorization = `Bearer ${tabToken}`;
 
   const target = backendUrl(url);
@@ -592,6 +599,17 @@ function renderDmHistory(list) {
   messages.scrollTop=messages.scrollHeight;
 }
 
+function updateServerHeader(server){
+  if(!server) return;
+  currentServerId=String(server.id);
+  $("serverTitle").textContent=server.name || "サーバー";
+  const icon=$("serverIcon");
+  setAvatarElement(icon, server.icon_url || server.iconUrl || null, server.name || "S");
+  const canManage=!!server.canManage;
+  $("serverSettingsButton").style.display=canManage ? "block" : "none";
+  $("addChannelButton").style.display=canManage ? "block" : "none";
+}
+
 function renderServers(list, selectedServerId) {
   servers = list || [];
   const select = $("serverSelect");
@@ -599,49 +617,50 @@ function renderServers(list, selectedServerId) {
   select.innerHTML = "";
   rail.querySelectorAll(".server-btn[data-server]").forEach(el => el.remove());
   servers.forEach(server => {
-    const opt = document.createElement("option");
-    opt.value = server.id; opt.textContent = server.name;
-    select.appendChild(opt);
-
-    const btn = document.createElement("button");
-    btn.className = "server-btn";
-    btn.dataset.server = server.id;
-    btn.title = server.name;
-    btn.textContent = (server.name || "?").slice(0, 2);
-    btn.onclick = () => {
-      const targetServer = servers.find(s => String(s.id) === String(server.id));
-      if (!targetServer) return;
-      currentServerId = String(targetServer.id);
-      select.value = currentServerId;
-      renderChannels(currentServerId, targetServer.channels?.[0]?.id);
-      if (targetServer.channels?.[0]) joinChannel(targetServer.channels[0]);
+    const opt=document.createElement("option"); opt.value=server.id; opt.textContent=server.name; select.appendChild(opt);
+    const btn=document.createElement("button");
+    btn.className="server-btn"; btn.dataset.server=server.id; btn.title=server.name;
+    setAvatarElement(btn, server.icon_url || server.iconUrl || null, server.name || "?");
+    btn.onclick=()=>{
+      const target=servers.find(s=>String(s.id)===String(server.id));
+      if(!target) return;
+      currentServerId=String(target.id);
+      select.value=currentServerId;
+      updateServerHeader(target);
+      document.querySelectorAll(".server-btn[data-server]").forEach(b=>b.classList.toggle("active",String(b.dataset.server)===currentServerId));
+      const first=target.channels?.[0];
+      renderChannels(currentServerId, first?.id);
+      if(first) joinChannel(first);
     };
     rail.appendChild(btn);
   });
-  if (!servers.length) return;
-  const target = selectedServerId || currentServerId || servers[0].id;
-  currentServerId = String(servers.some(s=>String(s.id)===String(target)) ? target : servers[0].id);
-  select.value = currentServerId;
-  const currentServer = servers.find(s => String(s.id) === currentServerId);
-  $("serverTitle").textContent = currentServer?.name || "サーバー";
-  rail.querySelectorAll(".server-btn[data-server]").forEach(btn => btn.classList.toggle("active", String(btn.dataset.server) === currentServerId));
-  renderChannels(currentServerId);
+  if(!servers.length) return;
+  const targetId=selectedServerId || currentServerId || servers[0].id;
+  const current=servers.find(s=>String(s.id)===String(targetId)) || servers[0];
+  updateServerHeader(current);
+  select.value=currentServerId;
+  rail.querySelectorAll(".server-btn[data-server]").forEach(btn=>btn.classList.toggle("active",String(btn.dataset.server)===currentServerId));
+  renderChannels(currentServerId, currentChannel);
 }
 
 function renderChannels(serverId, selectedChannelId) {
-  currentServerId = String(serverId);
-  const server = servers.find(s=>String(s.id)===currentServerId);
-  const list = $("channelList"); list.innerHTML = "";
-  if (!server) return;
-  (server.channels || []).forEach(ch => {
+  currentServerId=String(serverId);
+  const server=servers.find(s=>String(s.id)===currentServerId);
+  const list=$("channelList"); list.innerHTML="";
+  if(!server) return;
+  updateServerHeader(server);
+  const selected=selectedChannelId || currentChannel;
+  (server.channels||[]).forEach(ch=>{
     const row=document.createElement("div"); row.className="channel-row";
     const el=document.createElement("div"); el.className="channel"; el.dataset.channel=ch.id; el.textContent="# "+ch.name;
-    if(String(ch.id)===String(selectedChannelId || currentChannel)) el.classList.add("active");
-    el.onclick=()=>joinChannel(ch);
-    row.appendChild(el);
-    const del=document.createElement("button"); del.className="channel-delete"; del.textContent="×"; del.title="チャンネルを削除";
-    del.onclick=async e=>{e.stopPropagation(); if(confirm(`「${ch.name}」を削除しますか？`)){try{await api(`/api/channels/${ch.id}`,{method:"DELETE"}); await loadServers(currentServerId);}catch(err){alert(err.message)}}};
-    row.appendChild(del); list.appendChild(row);
+    if(String(ch.id)===String(selected)) el.classList.add("active");
+    el.onclick=()=>joinChannel(ch); row.appendChild(el);
+    if(server.canManage){
+      const del=document.createElement("button"); del.className="channel-delete"; del.textContent="×"; del.title="チャンネルを削除";
+      del.onclick=async e=>{e.stopPropagation(); if(confirm(`「${ch.name}」を削除しますか？`)){try{await api(`/api/channels/${ch.id}`,{method:"DELETE"}); if(String(currentChannel)===String(ch.id)) currentChannel=""; await loadServers(currentServerId);}catch(err){alert(err.message)}}};
+      row.appendChild(del);
+    }
+    list.appendChild(row);
   });
 }
 
@@ -657,13 +676,16 @@ async function loadServers(preferredServerId=null) {
 }
 
 function joinChannel(ch) {
-  if(!ch || !ws || ws.readyState!==WebSocket.OPEN) return;
+  if(!ch) return;
+  currentServerId=String(ch.server_id || currentServerId);
+  const server=servers.find(s=>String(s.id)===currentServerId);
   currentChannel=String(ch.id); viewMode="channel"; currentDmId=null; currentDmOther=null;
+  if(server) updateServerHeader(server);
   renderChannels(currentServerId,currentChannel);
   $("channelName").textContent=ch.name;
   $("messageInput").placeholder=`# ${ch.name} にメッセージを送信`;
   messages.innerHTML="";
-  ws.send(JSON.stringify({type:"join_channel",channel:ch.id}));
+  if(ws && ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({type:"join_channel",channel:ch.id}));
 }
 
 function connect() {
@@ -682,6 +704,7 @@ function connect() {
 
   ws.onopen = () => {
     $("messages").dataset.connected = "1";
+    if(currentChannel) ws.send(JSON.stringify({type:"join_channel",channel:currentChannel}));
   };
 
   ws.onmessage = e => {
@@ -773,7 +796,7 @@ function connect() {
     }
 
     if (data.type === "channel_history") {
-      currentChannel = data.channel;
+      if (String(data.channel) !== String(currentChannel)) return;
       renderHistory(data.messages || []);
       return;
     }
@@ -1396,6 +1419,35 @@ $("serverSelect").addEventListener("change", async e => {
   $("serverTitle").textContent = server.name || "サーバー";
   document.querySelectorAll(".server-btn[data-server]").forEach(btn => btn.classList.toggle("active", String(btn.dataset.server) === String(id)));
   if(server.channels?.[0]) joinChannel(server.channels[0]);
+});
+
+function openServerProfile(){
+  const server=servers.find(s=>String(s.id)===String(currentServerId));
+  if(!server || !server.canManage) return;
+  $("serverProfileName").value=server.name||"";
+  $("serverProfileDescription").value=server.description||"";
+  setAvatarElement($("serverProfileIcon"),server.icon_url||server.iconUrl||null,server.name||"S");
+  $("serverProfilePanel").classList.remove("hidden");
+}
+
+$("serverSettingsButton").addEventListener("click",openServerProfile);
+$("saveServerProfileButton").addEventListener("click",async()=>{
+  const server=servers.find(s=>String(s.id)===String(currentServerId)); if(!server?.canManage) return;
+  try{
+    const data=await api(`/api/servers/${server.id}`,{method:"PATCH",body:JSON.stringify({name:$("serverProfileName").value.trim(),description:$("serverProfileDescription").value.trim()})});
+    if($("serverIconInput").files[0]){
+      const fd=new FormData(); fd.append("file",$("serverIconInput").files[0]);
+      await api(`/api/servers/${server.id}/icon`,{method:"POST",body:fd});
+    }
+    $("serverProfilePanel").classList.add("hidden");
+    $("serverIconInput").value="";
+    await loadServers(server.id);
+  }catch(err){alert(err.message)}
+});
+$("deleteServerButton").addEventListener("click",async()=>{
+  const server=servers.find(s=>String(s.id)===String(currentServerId)); if(!server?.canManage) return;
+  if(!confirm(`「${server.name}」を削除しますか？`)) return;
+  try{await api(`/api/servers/${server.id}`,{method:"DELETE"}); $("serverProfilePanel").classList.add("hidden"); currentServerId=""; currentChannel=""; await loadServers();}catch(err){alert(err.message)}
 });
 
 async function createServer() {
