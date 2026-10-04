@@ -13,12 +13,13 @@
 }
 *{box-sizing:border-box}
 body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
-.app{display:grid;grid-template-columns:250px 1fr 210px;height:100vh}
+.app{display:grid;grid-template-columns:72px 250px 1fr 210px;height:100vh}
 .sidebar,.members{background:var(--panel);border-color:var(--line)}
+.server-rail{background:#0b0d12;border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:9px;overflow:auto}.server-btn{width:48px;height:48px;border:0;border-radius:15px;background:#1b1f29;color:#d9deea;font-weight:800;cursor:pointer;transition:.15s;position:relative}.server-btn:hover,.server-btn.active{border-radius:12px;background:var(--accent);color:#fff}.server-btn.active:before{content:"";position:absolute;left:-12px;top:7px;width:4px;height:34px;border-radius:0 4px 4px 0;background:#fff}.server-btn.add{font-size:25px;color:#67d391}.server-divider{width:38px;height:1px;background:var(--line);flex:none}
 .sidebar{border-right:1px solid var(--line);display:flex;flex-direction:column}
 .brand{height:60px;padding:18px;font-weight:800;border-bottom:1px solid var(--line)}
 .brand span{color:var(--accent)}
-.server-head{padding:10px;border-bottom:1px solid var(--line);display:flex;gap:6px;align-items:center}.server-select{flex:1;min-width:0;background:var(--panel2);color:#fff;border:1px solid var(--line);border-radius:7px;padding:9px;font-weight:700}.server-add,.channel-add,.channel-delete{border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:6px}.server-add{font-size:20px;width:34px;height:34px}.server-add:hover,.channel-add:hover{background:var(--hover);color:#fff}.channels{padding:10px;overflow:auto}.channel-tools{display:flex;align-items:center;justify-content:space-between;padding:7px 8px 4px}.channel-tools .section{padding:0}.channel-row{display:flex;align-items:center;gap:2px}.channel-row .channel{flex:1}.channel-delete{width:25px;height:25px}.channel-delete:hover{background:#7d343d;color:#fff}
+.server-head{padding:10px;border-bottom:1px solid var(--line);display:flex;gap:6px;align-items:center}.server-select{display:none;flex:1;min-width:0;background:var(--panel2);color:#fff;border:1px solid var(--line);border-radius:7px;padding:9px;font-weight:700}.server-add,.channel-add,.channel-delete{border:0;background:transparent;color:var(--muted);cursor:pointer;border-radius:6px}.server-add{font-size:20px;width:34px;height:34px}.server-add:hover,.channel-add:hover{background:var(--hover);color:#fff}.channels{padding:10px;overflow:auto}.channel-tools{display:flex;align-items:center;justify-content:space-between;padding:7px 8px 4px}.channel-tools .section{padding:0}.channel-row{display:flex;align-items:center;gap:2px}.channel-row .channel{flex:1}.channel-delete{width:25px;height:25px}.channel-delete:hover{background:#7d343d;color:#fff}
 .section{font-size:11px;color:var(--muted);font-weight:700;padding:8px}
 .channel{padding:10px 12px;border-radius:7px;color:#c8ced9;cursor:pointer;margin:2px 0}
 .channel:hover,.channel.active{background:var(--hover);color:white}
@@ -74,8 +75,8 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .text{margin-top:3px;white-space:pre-wrap;word-break:break-word;color:#e1e5ed}
 .system{color:var(--muted);font-size:13px;text-align:center;margin:10px}
 .composer{flex:0 0 auto;padding:12px 18px 18px}
-.composer form{display:flex;align-items:stretch;height:44px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;overflow:hidden}
-.composer input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:white;padding:0 14px;font-size:14px}.composer textarea{flex:1;min-width:0;min-height:44px;max-height:150px;resize:none;overflow-y:auto;background:transparent;border:0;outline:0;color:white;padding:11px 14px;font:inherit;font-size:14px;line-height:1.35}
+.composer form{display:flex;align-items:stretch;min-height:44px;height:auto;background:var(--panel2);border:1px solid var(--line);border-radius:9px;overflow:hidden}
+.composer input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:white;padding:0 14px;font-size:14px}.composer textarea{flex:1 1 auto;width:0;min-width:0;min-height:44px;max-height:150px;resize:none;overflow-y:auto;background:transparent;border:0;outline:0;color:white;padding:11px 14px;font:inherit;font-size:14px;line-height:1.35;box-sizing:border-box}
 .composer button{border:0;background:var(--accent);color:white;padding:0 18px;font-weight:700;cursor:pointer}
 .composer .attach-btn{flex:0 0 44px;width:44px;height:44px;padding:0;background:var(--accent);border-radius:0;display:grid;place-items:center;font-size:25px;line-height:1}
 .composer .send-btn{flex:0 0 64px}
@@ -245,9 +246,10 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
   </div>
 </div>
 <div class="app">
+  <aside class="server-rail" id="serverRail"><button class="server-btn add" id="addServerRailButton" title="サーバーを作成">＋</button><div class="server-divider"></div></aside>
   <aside class="sidebar">
     <div class="brand">Yamato <span>Chat</span></div>
-    <div class="server-head"><select id="serverSelect" class="server-select"></select><button id="addServerButton" class="server-add" title="サーバーを作成">＋</button></div>
+    <div class="server-head"><div id="serverTitle" style="flex:1;min-width:0;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">サーバー</div><select id="serverSelect" class="server-select" aria-hidden="true" tabindex="-1"></select><button id="addServerButton" class="server-add" title="サーバーを作成">＋</button></div>
     <div class="channels"><div class="channel-tools"><div class="section">CHANNELS</div><button id="addChannelButton" class="channel-add" title="チャンネルを追加">＋</button></div><div id="channelList"></div></div>
     <div class="social">
       <div class="social-head"><span>SOCIAL</span></div>
@@ -593,16 +595,36 @@ function renderDmHistory(list) {
 function renderServers(list, selectedServerId) {
   servers = list || [];
   const select = $("serverSelect");
+  const rail = $("serverRail");
   select.innerHTML = "";
+  rail.querySelectorAll(".server-btn[data-server]").forEach(el => el.remove());
   servers.forEach(server => {
     const opt = document.createElement("option");
     opt.value = server.id; opt.textContent = server.name;
     select.appendChild(opt);
+
+    const btn = document.createElement("button");
+    btn.className = "server-btn";
+    btn.dataset.server = server.id;
+    btn.title = server.name;
+    btn.textContent = (server.name || "?").slice(0, 2);
+    btn.onclick = () => {
+      const targetServer = servers.find(s => String(s.id) === String(server.id));
+      if (!targetServer) return;
+      currentServerId = String(targetServer.id);
+      select.value = currentServerId;
+      renderChannels(currentServerId, targetServer.channels?.[0]?.id);
+      if (targetServer.channels?.[0]) joinChannel(targetServer.channels[0]);
+    };
+    rail.appendChild(btn);
   });
   if (!servers.length) return;
   const target = selectedServerId || currentServerId || servers[0].id;
   currentServerId = String(servers.some(s=>String(s.id)===String(target)) ? target : servers[0].id);
   select.value = currentServerId;
+  const currentServer = servers.find(s => String(s.id) === currentServerId);
+  $("serverTitle").textContent = currentServer?.name || "サーバー";
+  rail.querySelectorAll(".server-btn[data-server]").forEach(btn => btn.classList.toggle("active", String(btn.dataset.server) === currentServerId));
   renderChannels(currentServerId);
 }
 
@@ -1356,7 +1378,7 @@ $("messageForm").addEventListener("submit", async e => {
       ws.send(JSON.stringify({type:"message", text, attachments}));
     }
     $("messageInput").value = "";
-    $("messageInput").style.height = "44px";
+    $("messageInput").style.height = "auto";
     $("fileStatus").textContent = "";
     setPendingFiles([]);
   } catch (err) {
@@ -1371,15 +1393,19 @@ $("serverSelect").addEventListener("change", async e => {
   const server=servers.find(s=>String(s.id)===String(id));
   if(!server) return;
   renderChannels(id, server.channels?.[0]?.id);
+  $("serverTitle").textContent = server.name || "サーバー";
+  document.querySelectorAll(".server-btn[data-server]").forEach(btn => btn.classList.toggle("active", String(btn.dataset.server) === String(id)));
   if(server.channels?.[0]) joinChannel(server.channels[0]);
 });
 
-$("addServerButton").addEventListener("click", async () => {
+async function createServer() {
   const name=prompt("新しいサーバー名");
   if(!name?.trim()) return;
   try { const data=await api("/api/servers",{method:"POST",body:JSON.stringify({name:name.trim()})}); await loadServers(data.server.id); if(data.server.channels?.[0]) joinChannel(data.server.channels[0]); }
   catch(err){ alert(err.message); }
-});
+}
+$("addServerButton").addEventListener("click", createServer);
+$("addServerRailButton").addEventListener("click", createServer);
 
 $("addChannelButton").addEventListener("click", async () => {
   if(!currentServerId) return;
