@@ -148,7 +148,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 @media(max-width:800px){.app{grid-template-columns:170px 1fr}.members{display:none}}
 @media(max-width:560px){.pending-grid{grid-template-columns:repeat(2,minmax(0,1fr));padding-right:34px}.pending-card img,.pending-file{height:100px}}
 @media(max-width:560px){.app{grid-template-columns:1fr}.sidebar{display:none}.messages{padding:14px}.attachment{width:100%}.attachment-image{max-height:260px}}
-.notifications{position:relative}.notification-btn{border:0;background:transparent;color:#ddd;font-size:20px;cursor:pointer;position:relative}.notification-badge{position:absolute;right:-5px;top:-5px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:#ed4245;color:#fff;font-size:10px;display:grid;place-items:center}.notification-panel{position:absolute;right:12px;top:52px;width:340px;max-height:430px;overflow:auto;background:#17191f;border:1px solid var(--line);border-radius:10px;z-index:30;box-shadow:0 15px 50px #0009}.notification-head{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--line);font-weight:700}.notification-item{padding:12px;border-bottom:1px solid #262934;cursor:pointer}.notification-item.unread{background:#20232c} .mention{background:#5865f2 !important;color:#fff !important;padding:2px 6px !important;border-radius:5px;font-weight:700;display:inline-block;line-height:1.25;box-shadow:0 0 0 1px rgba(255,255,255,.16),0 1px 3px rgba(0,0,0,.35);text-shadow:0 1px 1px rgba(0,0,0,.25)}.mention.everyone{background:#5865f2 !important;color:#fff !important}.notification-item small{display:block;color:var(--muted);margin-top:4px}.role-btn{background:var(--accent)!important}.server-member-role{font-size:11px;color:var(--muted);margin-top:3px}.modal-close{position:absolute;right:10px;top:8px;border:0;background:transparent;color:#bbb;font-size:24px;cursor:pointer}.server-profile-wrap{position:relative}
+.notifications{position:relative}.notification-btn{border:0;background:transparent;color:#ddd;font-size:20px;cursor:pointer;position:relative}.notification-badge{position:absolute;right:-5px;top:-5px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:#ed4245;color:#fff;font-size:10px;display:grid;place-items:center}.notification-panel{position:absolute;right:12px;top:52px;width:340px;max-height:430px;overflow:auto;background:#17191f;border:1px solid var(--line);border-radius:10px;z-index:30;box-shadow:0 15px 50px #0009}.notification-head{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--line);font-weight:700}.notification-item{padding:12px;border-bottom:1px solid #262934;cursor:pointer}.notification-item.unread{background:#20232c} .mention{background:#ed4245 !important;color:#fff !important;padding:2px 7px !important;border-radius:5px;font-weight:800;display:inline-block;line-height:1.3;box-shadow:0 0 0 1px rgba(255,255,255,.22),0 1px 4px rgba(0,0,0,.45);text-shadow:0 1px 1px rgba(0,0,0,.35)}.mention.everyone{background:#ed4245 !important;color:#fff !important}.channel-row{position:relative}.channel-indicator{width:8px;height:8px;border-radius:50%;display:block;flex:0 0 8px;margin-left:7px;box-shadow:0 0 0 1px rgba(255,255,255,.08)}.channel-indicator.unread{background:#fff}.channel-indicator.mention-dot{background:#ed4245 !important;box-shadow:0 0 0 1px rgba(255,255,255,.12),0 0 6px rgba(237,66,69,.55)}.notification-item small{display:block;color:var(--muted);margin-top:4px}.role-btn{background:var(--accent)!important}.server-member-role{font-size:11px;color:var(--muted);margin-top:3px}.modal-close{position:absolute;right:10px;top:8px;border:0;background:transparent;color:#bbb;font-size:24px;cursor:pointer}.server-profile-wrap{position:relative}
 </style>
 </head>
 <body>
@@ -338,6 +338,35 @@ window.addEventListener("unhandledrejection", (event) => {
 let myId = "";
 let currentServerRole = "member";
 let notificationItems = [];
+// Per-channel unread indicators for this browser tab. Mention (red) takes priority over normal unread (white).
+const channelUnreadState = Object.create(null);
+function setChannelUnread(channelId, kind){
+  const id=String(channelId||""); if(!id) return;
+  if(kind === "mention") channelUnreadState[id]="mention";
+  else if(!channelUnreadState[id]) channelUnreadState[id]="unread";
+  renderChannelIndicators();
+}
+function clearChannelUnread(channelId){
+  const id=String(channelId||""); if(!id) return;
+  delete channelUnreadState[id];
+  renderChannelIndicators();
+}
+function renderChannelIndicators(){
+  document.querySelectorAll(".channel-row").forEach(row=>{
+    const ch=row.querySelector(".channel");
+    if(!ch) return;
+    const id=String(ch.dataset.channel||"");
+    row.querySelector(".channel-indicator")?.remove();
+    const state=channelUnreadState[id];
+    if(state){
+      const dot=document.createElement("span");
+      dot.className="channel-indicator "+(state === "mention" ? "mention-dot" : "unread");
+      dot.title=state === "mention" ? "メンションされています" : "新しいメッセージ";
+      row.appendChild(dot);
+    }
+  });
+}
+
 let currentChannel = "";
 let currentServerId = "";
 let servers = [];
@@ -682,6 +711,8 @@ function renderChannels(serverId, selectedChannelId) {
     const el=document.createElement("div"); el.className="channel"; el.dataset.channel=ch.id; el.textContent="# "+ch.name;
     if(String(ch.id)===String(selected)) el.classList.add("active");
     el.onclick=()=>joinChannel(ch); row.appendChild(el);
+    const state=channelUnreadState[String(ch.id)];
+    if(state){ const dot=document.createElement("span"); dot.className="channel-indicator "+(state === "mention" ? "mention-dot" : "unread"); dot.title=state === "mention" ? "メンションされています" : "新しいメッセージ"; row.appendChild(dot); }
     if(server.canManage){
       const del=document.createElement("button"); del.className="channel-delete"; del.textContent="×"; del.title="チャンネルを削除";
       del.onclick=async e=>{e.stopPropagation(); if(confirm(`「${ch.name}」を削除しますか？\n\nこのチャンネル内のメッセージもすべて削除されます。続行しますか？`)){try{await api(`/api/channels/${ch.id}`,{method:"DELETE"}); if(String(currentChannel)===String(ch.id)) currentChannel=""; await loadServers(currentServerId);}catch(err){alert(err.message)}}};
@@ -707,6 +738,7 @@ function joinChannel(ch) {
   currentServerId=String(ch.server_id || currentServerId);
   const server=servers.find(s=>String(s.id)===currentServerId);
   currentChannel=String(ch.id); viewMode="channel"; currentDmId=null; currentDmOther=null;
+  clearChannelUnread(currentChannel);
   if(server) updateServerHeader(server);
   renderChannels(currentServerId,currentChannel);
   $("channelName").textContent=ch.name;
@@ -829,7 +861,14 @@ function connect() {
     }
 
     if (data.type === "message") {
-      if (data.channel === currentChannel) appendMessage(data.message);
+      const channelId=String(data.channel||"");
+      const msg=data.message||{};
+      const isMention=channelId && viewMode !== "dm" && messageMentionsCurrentUser(msg.text);
+      if (channelId === String(currentChannel)) {
+        appendMessage(msg);
+      } else if (channelId) {
+        setChannelUnread(channelId, isMention ? "mention" : "unread");
+      }
       return;
     }
 
@@ -852,6 +891,8 @@ function connect() {
       renderUsers(data.users);
     }
     if (data.type === "notification") {
+      const n=data.notification||{};
+      if(n.channelId) setChannelUnread(n.channelId, "mention");
       await loadNotifications();
       const old=document.title; document.title="🔔 通知 - Yamato Chat"; setTimeout(()=>document.title=old,3000);
     }
@@ -1012,7 +1053,7 @@ function appendMentionText(container, rawText){
     if(match.index>last) container.appendChild(document.createTextNode(raw.slice(last,match.index)));
     const span=document.createElement("span");
     span.className="mention"+(match[0].toLowerCase()==="@everyone"?" everyone":"");
-    span.style.cssText="background:#5865f2 !important;color:#fff !important;padding:2px 6px;border-radius:5px;font-weight:700;display:inline-block;line-height:1.25;box-shadow:0 0 0 1px rgba(255,255,255,.16),0 1px 3px rgba(0,0,0,.35);text-shadow:0 1px 1px rgba(0,0,0,.25);";
+    span.style.cssText="background:#ed4245 !important;color:#fff !important;padding:2px 7px;border-radius:5px;font-weight:800;display:inline-block;line-height:1.3;box-shadow:0 0 0 1px rgba(255,255,255,.22),0 1px 4px rgba(0,0,0,.45);text-shadow:0 1px 1px rgba(0,0,0,.35);";
     span.textContent=match[0];
     container.appendChild(span);
     last=re.lastIndex;
@@ -1023,7 +1064,13 @@ function appendMentionText(container, rawText){
 function appendMessage(m) {
   const wrap = document.createElement("div");
   wrap.className = "message";
-  if(viewMode !== "dm" && messageMentionsCurrentUser(m.text)) wrap.classList.add("mentioned");
+  const messageIsOwn = !!account && ((account.chatUserId && m.userId && String(account.chatUserId) === String(m.userId)) || (!m.userId && m.user === (account.display_name || account.displayName)));
+  const mentionHighlight = viewMode !== "dm" && !messageIsOwn && messageMentionsCurrentUser(m.text);
+  if(mentionHighlight){
+    wrap.classList.add("mentioned");
+    wrap.style.background = "#5a4514";
+    wrap.style.boxShadow = "inset 5px 0 0 #ffd43b, 0 0 0 1px rgba(255,212,59,.35)";
+  }
   wrap.dataset.messageId = m.id || "";
 
   // Discord-like message grouping: consecutive messages by the same user
