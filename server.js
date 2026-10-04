@@ -733,42 +733,62 @@ app.post("/api/notifications/read", requireAccount, async (req,res)=>{
 });
 
 async function createMentionNotifications(text, message, serverId, channelId){
-  const names=[...String(text||"").matchAll(/@([A-Za-z0-9_]{3,24})/g)].map(m=>m[1].toLowerCase());
-  if(!names.length) return;
-  const unique=[...new Set(names)];
-  const {data:targets,error}=await supabase.from("accounts").select("id,username,display_name").in("username",unique);
-  if(error) { console.error("Mention lookup error:",error); return; }
+  const raw=String(text||"");
+  const everyone=/@everyone\b/i.test(raw);
+  const names=[...raw.matchAll(/@([A-Za-z0-9_]{3,24})/g)]
+    .map(m=>m[1].toLowerCase())
+    .filter(n=>n!="everyone");
+  if(!everyone && !names.length) return;
 
-  const rows=(targets||[])
-    .filter(t=>String(t.id)!==String(message.accountId))
-    .map(t=>({
-      account_id:t.id,
-      type:"mention",
-      title:`${message.user} さんがあなたをメンションしました`,
-      body:String(text).slice(0,500),
-      server_id:serverId,
-      channel_id:channelId,
-      message_id:message.id
-    }));
+  // Mentions are limited to members of the current server.
+  const {data:memberRows,error:memberError}=await supabase
+    .from("server_members")
+    .select("account_id")
+    .eq("server_id",serverId);
+  if(memberError){ console.error("Mention member lookup error:",memberError); return; }
+  const memberIds=[...new Set((memberRows||[]).map(r=>String(r.account_id)).filter(Boolean))];
+  if(!memberIds.length) return;
+
+  const {data:accounts,error:accountError}=await supabase
+    .from("accounts")
+    .select("id,username,display_name")
+    .in("id",memberIds);
+  if(accountError){ console.error("Mention account lookup error:",accountError); return; }
+
+  const byUsername=new Map((accounts||[]).map(a=>[String(a.username||"").toLowerCase(),a]));
+  const targets=new Map();
+  if(everyone){
+    for(const a of accounts||[]) targets.set(String(a.id),a);
+  }
+  for(const name of names){
+    const a=byUsername.get(name);
+    if(a) targets.set(String(a.id),a);
+  }
+  targets.delete(String(message.accountId));
+
+  const title=everyone
+    ? `${message.user} さんが @everyone でメンションしました`
+    : `${message.user} さんがあなたをメンションしました`;
+  const rows=[...targets.values()].map(t=>({
+    account_id:t.id,
+    type:"mention",
+    title,
+    body:raw.slice(0,500),
+    server_id:serverId,
+    channel_id:channelId,
+    message_id:message.id
+  }));
 
   if(rows.length){
     const {error:ne}=await supabase.from("notifications").insert(rows);
     if(ne) console.error("Mention notification error:",ne);
   }
 
-  for(const t of targets||[]){
-    if(String(t.id)!==String(message.accountId)){
-      await sendToAccount(t.id,{
-        type:"notification",
-        notification:{
-          title:`${message.user} さんがあなたをメンションしました`,
-          body:String(text).slice(0,500),
-          serverId,
-          channelId,
-          messageId:message.id
-        }
-      });
-    }
+  for(const t of targets.values()){
+    await sendToAccount(t.id,{
+      type:"notification",
+      notification:{title,body:raw.slice(0,500),serverId,channelId,messageId:message.id}
+    });
   }
 }
 
