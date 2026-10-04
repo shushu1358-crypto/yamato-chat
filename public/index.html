@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="ja">
 <head>
+<script>window.YAMATO_CHAT_BACKEND = "https://yamato-chat.onrender.com";</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Yamato Chat</title>
@@ -356,7 +357,7 @@ async function api(url, options = {}) {
 
   const target = /^https?:\/\//i.test(url)
     ? url
-    : `${YAMATO_CHAT_BACKEND.replace(/\/$/, "")}${url}`;
+    : `${window.YAMATO_CHAT_BACKEND.replace(/\/$/, "")}${url}`;
 
   const response = await fetch(target, {
     ...options,
@@ -561,7 +562,7 @@ function connect() {
   if (!account) return;
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
 
-  const backend = new URL(YAMATO_CHAT_BACKEND);
+  const backend = new URL(window.YAMATO_CHAT_BACKEND);
   const protocol = backend.protocol === "https:" ? "wss:" : "ws:";
   const tabToken = sessionStorage.getItem("yamato_session_token") || "";
   if (!tabToken) {
@@ -1148,6 +1149,13 @@ $("messageInput").addEventListener("paste", e => {
   setPendingFiles([...pendingFiles, ...pastedFiles].slice(0, 10));
 });
 
+
+$("messageInput").addEventListener("keydown", e => {
+  if (e.key === "Enter" && e.shiftKey) {
+    e.stopPropagation();
+    return;
+  }
+});
 
 $("messageForm").addEventListener("submit", async e => {
   e.preventDefault();

@@ -1,6 +1,6 @@
 {
   "name": "yamato-chat",
-  "version": "2.5.4",
+  "version": "2.6.0-b2",
   "private": true,
   "description": "Lightweight Discord-style chat server with Supabase persistence",
   "main": "server.js",
@@ -15,6 +15,7 @@
     "express": "^5.1.0",
     "ws": "^8.18.3",
     "bcryptjs": "^2.4.3",
-    "multer": "^2.0.2"
+    "multer": "^2.0.2",
+    "@aws-sdk/client-s3": "^3.879.0"
   }
 }

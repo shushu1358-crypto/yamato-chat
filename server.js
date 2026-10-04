@@ -6,6 +6,7 @@ const bcrypt = require("bcryptjs");
 const { WebSocketServer } = require("ws");
 const { createClient } = require("@supabase/supabase-js");
 const multer = require("multer");
+const { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } = require("@aws-sdk/client-s3");
 
 const app = express();
 const server = http.createServer(app);
@@ -34,7 +35,19 @@ const MAX_MESSAGES = 200;
 const SESSION_DAYS = 30;
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
-const STORAGE_BUCKET = "yamato-chat-files";
+const STORAGE_BUCKET = process.env.B2_BUCKET || "yamato-chat-files";
+const B2_ENDPOINT = process.env.B2_ENDPOINT;
+const B2_KEY_ID = process.env.B2_KEY_ID;
+const B2_APPLICATION_KEY = process.env.B2_APPLICATION_KEY;
+const B2_REGION = process.env.B2_REGION || "us-west-004";
+const FILE_URL_SECRET = process.env.SUPABASE_SECRET_KEY;
+const ATTACHMENT_CAP_BYTES = 9 * 1024 * 1024 * 1024;
+const ATTACHMENT_TARGET_BYTES = Math.floor(8.5 * 1024 * 1024 * 1024);
+if (!B2_ENDPOINT || !B2_KEY_ID || !B2_APPLICATION_KEY) {
+  console.error("Missing B2_ENDPOINT, B2_KEY_ID, or B2_APPLICATION_KEY.");
+  process.exit(1);
+}
+const b2 = new S3Client({ region: B2_REGION, endpoint: B2_ENDPOINT, credentials: { accessKeyId: B2_KEY_ID, secretAccessKey: B2_APPLICATION_KEY } });
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -396,26 +409,58 @@ function makeStoragePath(accountId, originalName, prefix) {
   return `${prefix}/${accountId}/${Date.now()}-${crypto.randomBytes(6).toString("hex")}-${base}${ext}`;
 }
 
-function publicStorageUrl(storagePath) {
-  const encoded = storagePath.split("/").map(encodeURIComponent).join("/");
-  return `${SUPABASE_URL}/storage/v1/object/public/${STORAGE_BUCKET}/${encoded}`;
+function fileToken(storagePath) {
+  return crypto.createHmac("sha256", FILE_URL_SECRET).update(storagePath).digest("hex");
 }
 
-async function ensureStorageBucket() {
-  const { data, error } = await supabase.storage.listBuckets();
-  if (error) throw error;
+function publicStorageUrl(storagePath, req, download = false) {
+  const base = `${req.protocol}://${req.get("host")}`;
+  const params = new URLSearchParams({ key: storagePath, token: fileToken(storagePath) });
+  if (download) params.set("download", "1");
+  return `${base}/api/file?${params.toString()}`;
+}
 
-  if (!(data || []).some(bucket => bucket.name === STORAGE_BUCKET)) {
-    const { error: createError } = await supabase.storage.createBucket(STORAGE_BUCKET, {
-      public: true,
-      fileSizeLimit: `${MAX_UPLOAD_BYTES}B`
-    });
+async function putB2Object(storagePath, buffer, contentType) {
+  await b2.send(new PutObjectCommand({ Bucket: STORAGE_BUCKET, Key: storagePath, Body: buffer, ContentType: contentType || "application/octet-stream" }));
+}
 
-    if (createError && !String(createError.message || "").toLowerCase().includes("already")) {
-      throw createError;
+async function enforceAttachmentCap() {
+  try {
+    let continuationToken; const objects = [];
+    do {
+      const page = await b2.send(new ListObjectsV2Command({ Bucket: STORAGE_BUCKET, Prefix: "uploads/", ContinuationToken: continuationToken }));
+      objects.push(...(page.Contents || []));
+      continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (continuationToken);
+    let total = objects.reduce((sum, o) => sum + (Number(o.Size) || 0), 0);
+    if (total <= ATTACHMENT_CAP_BYTES) return;
+    objects.sort((a,b) => new Date(a.LastModified || 0) - new Date(b.LastModified || 0));
+    let batch=[];
+    for (const obj of objects) {
+      if (total <= ATTACHMENT_TARGET_BYTES) break;
+      if (!obj.Key) continue;
+      batch.push({Key:obj.Key}); total -= Number(obj.Size)||0;
+      if (batch.length===1000) { await b2.send(new DeleteObjectsCommand({Bucket:STORAGE_BUCKET,Delete:{Objects:batch,Quiet:true}})); batch=[]; }
     }
-  }
+    if (batch.length) await b2.send(new DeleteObjectsCommand({Bucket:STORAGE_BUCKET,Delete:{Objects:batch,Quiet:true}}));
+    console.log(`B2 attachment cleanup completed. Remaining estimated size: ${total} bytes`);
+  } catch (error) { console.error("B2 attachment cleanup error:", error); }
 }
+
+app.get("/api/file", async (req,res) => {
+  try {
+    const key=String(req.query.key||""); const token=String(req.query.token||""); const expected=fileToken(key);
+    if (!key || !token || token.length!==expected.length || !crypto.timingSafeEqual(Buffer.from(token),Buffer.from(expected))) return res.status(403).send("Forbidden");
+    if (key.includes("\\") || key.includes("..") || key.startsWith("/")) return res.status(400).send("Invalid key");
+    const obj=await b2.send(new GetObjectCommand({Bucket:STORAGE_BUCKET,Key:key}));
+    if (obj.ContentType) res.setHeader("Content-Type",obj.ContentType);
+    res.setHeader("Cache-Control","private, max-age=3600");
+    const filename=path.basename(key).replace(/"/g,"");
+    res.setHeader("Content-Disposition",`${String(req.query.download||"")==="1"?"attachment":"inline"}; filename="${filename}"`);
+    if (obj.ContentLength!=null) res.setHeader("Content-Length",String(obj.ContentLength));
+    obj.Body.pipe(res);
+  } catch(error) { console.error("B2 file read error:",error); if(error?.name==="NoSuchKey") return res.status(404).send("Not found"); res.status(500).send("File read failed"); }
+});
 
 app.post("/api/profile/avatar", requireAccount, avatarUpload.single("file"), async (req, res) => {
   try {
@@ -427,16 +472,8 @@ app.post("/api/profile/avatar", requireAccount, avatarUpload.single("file"), asy
     }
 
     const storagePath = makeStoragePath(req.account.id, safeFileName(req.file.originalname), "avatars");
-    const { error: uploadError } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .upload(storagePath, req.file.buffer, {
-        contentType: req.file.mimetype,
-        upsert: false
-      });
-
-    if (uploadError) throw uploadError;
-
-    const avatarUrl = publicStorageUrl(storagePath);
+    await putB2Object(storagePath, req.file.buffer, req.file.mimetype);
+    const avatarUrl = publicStorageUrl(storagePath, req);
 
     const { data, error } = await supabase
       .from("accounts")
@@ -471,19 +508,14 @@ app.post("/api/upload", requireAccount, upload.single("file"), async (req, res) 
       "uploads"
     );
 
-    const { error: uploadError } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .upload(storagePath, req.file.buffer, {
-        contentType: req.file.mimetype || "application/octet-stream",
-        upsert: false
-      });
-
-    if (uploadError) throw uploadError;
+    await putB2Object(storagePath, req.file.buffer, req.file.mimetype || "application/octet-stream");
+    void enforceAttachmentCap();
 
     res.json({
       ok: true,
       file: {
-        url: publicStorageUrl(storagePath),
+        url: publicStorageUrl(storagePath, req),
+        key: storagePath,
         name: safeFileName(req.file.originalname),
         type: req.file.mimetype || "application/octet-stream",
         size: req.file.size
@@ -1471,7 +1503,7 @@ app.get(/.*/, (_req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-Promise.all([ensureDefaultData(), ensureStorageBucket()])
+ensureDefaultData()
   .then(() => {
     server.listen(PORT, () => {
       console.log(`Yamato Chat running on port ${PORT}`);
