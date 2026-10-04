@@ -58,7 +58,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .header{height:60px;border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 18px;font-weight:700}
 .header small{margin-left:10px;color:var(--muted);font-weight:400}
 .messages{flex:1;min-height:0;overflow:auto;padding:18px 22px}
-.message{display:flex;gap:11px;margin:0 0 16px}
+.message{display:flex;gap:11px;margin:0 0 16px;position:relative;align-items:flex-start;clear:both}.message.continuation{margin-top:-10px;margin-bottom:2px}.message.continuation .msghead{display:none}.message.continuation .avatar{visibility:hidden}.message.continuation .text{margin-top:0}.message .avatar{cursor:pointer}.message .avatar:hover{filter:brightness(1.12)}
 .message-actions{display:inline-flex;gap:4px;margin-left:8px;opacity:1;pointer-events:auto}
 .message-action{border:0;background:#2a2e39;color:#cbd1df;border-radius:5px;width:25px;height:23px;cursor:pointer;font-size:13px;display:grid;place-items:center;padding:0}
 .message-action:hover{background:#3a3f4d;color:#fff}
@@ -69,13 +69,13 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .attachments-grid .attachment-image{max-width:100%;width:auto;max-height:360px}
 
 .message .avatar{width:36px;height:36px}
-.msgbody{min-width:0}.msghead{display:flex;gap:8px;align-items:baseline}
+.msgbody{min-width:0;flex:1;overflow-wrap:anywhere}.msghead{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.text{line-height:1.5}
 .msghead b{font-size:14px}.time{font-size:10px;color:var(--muted)}
 .text{margin-top:3px;white-space:pre-wrap;word-break:break-word;color:#e1e5ed}
 .system{color:var(--muted);font-size:13px;text-align:center;margin:10px}
 .composer{flex:0 0 auto;padding:12px 18px 18px}
 .composer form{display:flex;align-items:stretch;height:44px;background:var(--panel2);border:1px solid var(--line);border-radius:9px;overflow:hidden}
-.composer input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:white;padding:0 14px;font-size:14px}
+.composer input{flex:1;min-width:0;background:transparent;border:0;outline:0;color:white;padding:0 14px;font-size:14px}.composer textarea{flex:1;min-width:0;min-height:44px;max-height:150px;resize:none;overflow-y:auto;background:transparent;border:0;outline:0;color:white;padding:11px 14px;font:inherit;font-size:14px;line-height:1.35}
 .composer button{border:0;background:var(--accent);color:white;padding:0 18px;font-weight:700;cursor:pointer}
 .composer .attach-btn{flex:0 0 44px;width:44px;height:44px;padding:0;background:var(--accent);border-radius:0;display:grid;place-items:center;font-size:25px;line-height:1}
 .composer .send-btn{flex:0 0 64px}
@@ -141,12 +141,23 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .pending-summary{margin-top:8px;color:var(--muted);font-size:11px}
 .pending-remove{position:absolute;right:10px;top:10px;width:30px;height:30px;padding:0;background:#5865f2;border:0;border-radius:50%;color:white;cursor:pointer;font-size:18px;z-index:5}
 .composer #fileStatus{display:none}
+
+.startup-overlay{position:fixed;inset:0;background:#0f1117;display:grid;place-items:center;z-index:100;padding:20px}.startup-card{width:min(420px,92vw);text-align:center}.startup-logo{font-size:30px;font-weight:900;margin-bottom:18px}.startup-logo span{color:var(--accent)}.startup-spinner{width:34px;height:34px;border:4px solid #303644;border-top-color:var(--accent);border-radius:50%;margin:0 auto 14px;animation:ycspin .8s linear infinite}.startup-status{color:var(--muted);font-size:13px}.startup-hint{color:#697286;font-size:11px;margin-top:8px}@keyframes ycspin{to{transform:rotate(360deg)}}
+.user-card-backdrop{position:fixed;inset:0;z-index:30;pointer-events:none}.user-card{position:absolute;width:min(340px,calc(100vw - 28px));background:#242730;border:1px solid #343947;border-radius:12px;box-shadow:0 18px 60px #000b;overflow:hidden;pointer-events:auto}.user-card-banner{height:74px;background:linear-gradient(135deg,#303744,#1d222d)}.user-card-body{padding:0 16px 16px;position:relative}.user-card-avatar{width:78px;height:78px;border:6px solid #242730;border-radius:50%;position:absolute;top:-39px;background:var(--accent2);overflow:hidden}.user-card-avatar .avatar{width:100%;height:100%}.user-card-close{position:absolute;right:10px;top:10px;width:30px;height:30px;border:0;border-radius:50%;background:#171a22;color:#fff;cursor:pointer}.user-card-name{padding-top:48px;font-size:20px;font-weight:800}.user-card-username{color:var(--muted);font-size:13px;margin-top:2px}.user-card-bio{margin-top:14px;padding-top:14px;border-top:1px solid #343947;white-space:pre-wrap;word-break:break-word;color:#e1e5ed;font-size:13px;line-height:1.5}.user-card-status{display:inline-flex;align-items:center;gap:6px;margin-top:10px;color:#9aa3b5;font-size:11px}.user-card-status .online-dot{width:8px;height:8px;border-radius:50%;background:#53d889}.user-card-status .offline-dot{width:8px;height:8px;border-radius:50%;background:#687080}.user-card-actions{display:flex;gap:8px;margin-top:14px}.user-card-actions button{border:0;border-radius:7px;padding:9px 12px;background:var(--accent);color:#fff;font-weight:700;cursor:pointer}.user-card-actions button.secondary{background:#353a47}.user-card-actions button:disabled{opacity:.6;cursor:default}
 @media(max-width:800px){.app{grid-template-columns:170px 1fr}.members{display:none}}
 @media(max-width:560px){.pending-grid{grid-template-columns:repeat(2,minmax(0,1fr));padding-right:34px}.pending-card img,.pending-file{height:100px}}
 @media(max-width:560px){.app{grid-template-columns:1fr}.sidebar{display:none}.messages{padding:14px}.attachment{width:100%}.attachment-image{max-height:260px}}
 </style>
 </head>
 <body>
+<div id="startupOverlay" class="startup-overlay">
+  <div class="startup-card">
+    <div class="startup-logo">Yamato <span>Chat</span></div>
+    <div class="startup-spinner"></div>
+    <div id="startupStatus" class="startup-status">サーバーに接続しています…</div>
+    <div class="startup-hint">Renderがスリープ中の場合は、起動するまで少し待ちます</div>
+  </div>
+</div>
 
 <div id="authOverlay" class="overlay">
   <div id="loginCard" class="auth-card">
@@ -219,6 +230,20 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
     <div class="social-section"><h3>フレンド</h3><div id="friendsList"></div></div>
   </div>
 </div>
+<div id="userCardBackdrop" class="user-card-backdrop hidden">
+  <div id="userCard" class="user-card">
+    <div class="user-card-banner"></div>
+    <div class="user-card-body">
+      <button id="userCardClose" class="user-card-close" type="button">×</button>
+      <div id="userCardAvatar" class="user-card-avatar"></div>
+      <div id="userCardName" class="user-card-name"></div>
+      <div id="userCardUsername" class="user-card-username"></div>
+      <div id="userCardStatus" class="user-card-status"></div>
+      <div id="userCardBio" class="user-card-bio"></div>
+      <div id="userCardActions" class="user-card-actions"></div>
+    </div>
+  </div>
+</div>
 <div class="app">
   <aside class="sidebar">
     <div class="brand">Yamato <span>Chat</span></div>
@@ -251,7 +276,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
       <form id="messageForm">
         <input type="file" id="fileInput" hidden multiple>
         <button type="button" class="attach-btn" id="attachButton" title="画像・ファイルを添付">＋</button>
-        <input id="messageInput" maxlength="2000" placeholder="# general にメッセージを送信" autocomplete="off">
+        <textarea id="messageInput" maxlength="2000" rows="1" placeholder="# general にメッセージを送信" autocomplete="off"></textarea>
         <button type="submit" class="send-btn">送信</button>
       </form>
       <div id="fileStatus" class="attachment-meta"></div>
@@ -347,6 +372,17 @@ function setAccount(data) {
   $("editBio").value = account.bio || "";
 }
 
+function backendUrl(url) {
+  return /^https?:\/\//i.test(url)
+    ? url
+    : `${window.YAMATO_CHAT_BACKEND.replace(/\/$/, "")}${url}`;
+}
+
+function authHeaders(extra = {}) {
+  const tabToken = sessionStorage.getItem("yamato_session_token") || "";
+  return { ...(extra || {}), ...(tabToken ? {Authorization:`Bearer ${tabToken}`} : {}) };
+}
+
 async function api(url, options = {}) {
   const tabToken = sessionStorage.getItem("yamato_session_token") || "";
   const headers = {
@@ -355,9 +391,7 @@ async function api(url, options = {}) {
   };
   if (tabToken) headers.Authorization = `Bearer ${tabToken}`;
 
-  const target = /^https?:\/\//i.test(url)
-    ? url
-    : `${window.YAMATO_CHAT_BACKEND.replace(/\/$/, "")}${url}`;
+  const target = backendUrl(url);
 
   const response = await fetch(target, {
     ...options,
@@ -776,14 +810,86 @@ function deleteOwnMessage(messageId, dmConversationId=null) {
   }
 }
 
+function closeUserCard() {
+  $("userCardBackdrop").classList.add("hidden");
+}
+
+async function openUserCard(username, anchorEl) {
+  if (!username) return;
+  const backdrop = $("userCardBackdrop");
+  const card = $("userCard");
+  try {
+    const data = await api(`/api/users/${encodeURIComponent(username)}`);
+    const u = data.user;
+    setAvatarElement($("userCardAvatar"), u.avatarUrl, u.displayName || u.username);
+    $("userCardName").textContent = u.displayName || u.username;
+    $("userCardUsername").textContent = "@" + u.username;
+    $("userCardBio").textContent = u.bio || "自己紹介はまだありません";
+    $("userCardStatus").innerHTML = `<span class="${u.online ? "online-dot" : "offline-dot"}"></span>${u.online ? "オンライン" : "オフライン"}`;
+    const actions = $("userCardActions");
+    actions.innerHTML = "";
+    if (!account || u.id === account.id) {
+      const me = document.createElement("button");
+      me.type="button"; me.className="secondary"; me.textContent="自分のプロフィール"; me.disabled=true;
+      actions.appendChild(me);
+    } else {
+      const friend = document.createElement("button");
+      friend.type="button"; friend.textContent="フレンドに追加";
+      friend.addEventListener("click", async () => {
+        friend.disabled=true; friend.textContent="送信中…";
+        try {
+          await api("/api/friends/request", {method:"POST", body:JSON.stringify({username:u.username})});
+          friend.textContent="申請済み";
+        } catch (err) {
+          friend.disabled=false; friend.textContent="フレンドに追加";
+          alert(err.message);
+        }
+      });
+      actions.appendChild(friend);
+    }
+
+    backdrop.classList.remove("hidden");
+    const rect = anchorEl?.getBoundingClientRect();
+    const cardW = Math.min(340, window.innerWidth - 28);
+    let left = rect ? rect.right + 12 : 20;
+    let top = rect ? rect.top - 20 : 80;
+    if (left + cardW > window.innerWidth - 14) left = Math.max(14, (rect?.left || 20) - cardW - 12);
+    top = Math.max(14, Math.min(top, window.innerHeight - 430));
+    card.style.left = `${left}px`;
+    card.style.top = `${top}px`;
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
 function appendMessage(m) {
   const wrap = document.createElement("div");
   wrap.className = "message";
   wrap.dataset.messageId = m.id || "";
 
+  // Discord-like message grouping: consecutive messages by the same user
+  // within five minutes share one avatar/name header.
+  const prev = messages.lastElementChild;
+  const prevUserId = prev?.dataset?.userId || "";
+  const prevUsername = prev?.dataset?.username || "";
+  const currentUserId = m.userId == null ? "" : String(m.userId);
+  const currentUsername = m.username || "";
+  const prevTime = Number(prev?.dataset?.messageTime || 0);
+  const currentTime = Number(new Date(m.time).getTime() || 0);
+  const sameUser = currentUserId && prevUserId
+    ? currentUserId === prevUserId
+    : (!currentUserId && !prevUserId && currentUsername && prevUsername === currentUsername);
+  const closeEnough = prevTime && currentTime && Math.abs(currentTime - prevTime) <= 5 * 60 * 1000;
+  if (sameUser && closeEnough) wrap.classList.add("continuation");
+  wrap.dataset.userId = currentUserId;
+  wrap.dataset.username = currentUsername;
+  wrap.dataset.messageTime = String(currentTime);
+
   const avatar = document.createElement("div");
   avatar.className = "avatar";
   setAvatarElement(avatar, m.avatarUrl, m.user);
+  avatar.title = `${m.user || "ユーザー"} のプロフィールを表示`;
+  avatar.addEventListener("click", () => openUserCard(m.username || "", avatar));
 
   const body = document.createElement("div");
   body.className = "msgbody";
@@ -1006,9 +1112,9 @@ $("saveProfileButton").addEventListener("click", async () => {
     if (avatarFile) {
       const form = new FormData();
       form.append("file", avatarFile);
-      const response = await fetch("/api/profile/avatar", {
+      const response = await fetch(backendUrl("/api/profile/avatar"), {
         method: "POST",
-        credentials: "same-origin",
+        headers: authHeaders(),
         body: form
       });
       const avatarData = await response.json();
@@ -1032,9 +1138,9 @@ $("attachButton").addEventListener("click", () => $("fileInput").click());
 async function uploadChatFile(file) {
   const form = new FormData();
   form.append("file", file, file.name || "pasted-file");
-  const response = await fetch("/api/upload", {
+  const response = await fetch(backendUrl("/api/upload"), {
     method: "POST",
-    credentials: "same-origin",
+    headers: authHeaders(),
     body: form
   });
   const data = await response.json();
@@ -1150,11 +1256,20 @@ $("messageInput").addEventListener("paste", e => {
 });
 
 
+$("messageInput").addEventListener("input", () => {
+  const el = $("messageInput");
+  el.style.height = "auto";
+  el.style.height = `${Math.min(el.scrollHeight, 150)}px`;
+});
+
 $("messageInput").addEventListener("keydown", e => {
-  if (e.key === "Enter" && e.shiftKey) {
-    e.stopPropagation();
+  if (e.key !== "Enter") return;
+  if (e.shiftKey) {
+    // Native textarea behavior: Shift+Enter inserts a newline.
     return;
   }
+  e.preventDefault();
+  $("messageForm").requestSubmit();
 });
 
 $("messageForm").addEventListener("submit", async e => {
@@ -1184,6 +1299,7 @@ $("messageForm").addEventListener("submit", async e => {
       ws.send(JSON.stringify({type:"message", text, attachments}));
     }
     $("messageInput").value = "";
+    $("messageInput").style.height = "44px";
     $("fileStatus").textContent = "";
     setPendingFiles([]);
   } catch (err) {
@@ -1222,7 +1338,32 @@ $("logoutButton").addEventListener("click", async () => {
   showLogin();
 });
 
-checkSession();
+$("userCardClose").addEventListener("click", closeUserCard);
+$("userCardBackdrop").addEventListener("click", e => {
+  if (e.target === $("userCardBackdrop")) closeUserCard();
+});
+
+async function waitForBackend() {
+  const overlay = $("startupOverlay");
+  const status = $("startupStatus");
+  while (true) {
+    try {
+      status.textContent = "サーバーに接続しています…";
+      const response = await fetch(backendUrl("/health"), {cache:"no-store"});
+      if (response.ok) {
+        status.textContent = "接続しました。起動しています…";
+        await new Promise(r => setTimeout(r, 350));
+        overlay.classList.add("hidden");
+        return;
+      }
+    } catch (_) {
+      status.textContent = "Renderを起動しています…";
+    }
+    await new Promise(r => setTimeout(r, 1800));
+  }
+}
+
+waitForBackend().then(checkSession);
 </script>
 </body>
 </html>

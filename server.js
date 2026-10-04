@@ -313,6 +313,38 @@ app.get("/api/me", requireAccount, async (req, res) => {
   res.json({ ok: true, account: req.account });
 });
 
+// Public profile lookup for the Discord-style user card.
+// Only non-sensitive profile fields are returned.
+app.get("/api/users/:username", requireAccount, async (req, res) => {
+  try {
+    const username = String(req.params.username || "").trim();
+    const { data: profile, error } = await supabase
+      .from("accounts")
+      .select("id, username, display_name, bio, avatar_url, created_at")
+      .eq("username", username)
+      .maybeSingle();
+    if (error) throw error;
+    if (!profile) return res.status(404).json({ ok:false, error:"ユーザーが見つかりません" });
+
+    const online = [...clients.values()].some(u => u.accountId === profile.id);
+    res.json({
+      ok: true,
+      user: {
+        id: profile.id,
+        username: profile.username,
+        displayName: profile.display_name,
+        bio: profile.bio || "",
+        avatarUrl: profile.avatar_url || null,
+        createdAt: profile.created_at,
+        online
+      }
+    });
+  } catch (error) {
+    console.error("User profile lookup error:", error);
+    res.status(500).json({ ok:false, error:"ユーザープロフィールの取得に失敗しました" });
+  }
+});
+
 app.post("/api/logout", async (req, res) => {
   try {
     const token = getRequestSessionToken(req);
@@ -1491,10 +1523,8 @@ wss.on("connection", async (ws, req) => {
   });
 
   ws.on("close", () => {
-    const oldName = user.name;
     clients.delete(ws);
-
-    broadcast({ type: "system", text: `${oldName} が退出しました` });
+    // Leave silently. The member list reflects the offline state.
     sendUserList();
   });
 });
