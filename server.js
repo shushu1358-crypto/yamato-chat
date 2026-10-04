@@ -699,15 +699,34 @@ app.patch("/api/servers/:serverId/members/:accountId", requireAccount, async (re
 
 app.get("/api/notifications", requireAccount, async (req,res)=>{
   try{
-    const {data,error}=await supabase.from("notifications").select("id,type,message,server_id,channel_id,actor_id,is_read,created_at").eq("recipient_id",req.account.id).order("created_at",{ascending:false}).limit(50);
+    const {data,error}=await supabase
+      .from("notifications")
+      .select("id,type,title,body,server_id,channel_id,message_id,read_at,created_at")
+      .eq("account_id",req.account.id)
+      .order("created_at",{ascending:false})
+      .limit(50);
     if(error) throw error;
-    const notifications=(data||[]).map(n=>({id:n.id,type:n.type,title:n.type==="mention"?"メンション":"通知",body:n.message||"",server_id:n.server_id,channel_id:n.channel_id,read_at:n.is_read?new Date(n.created_at).toISOString():null,created_at:n.created_at}));
+    const notifications=(data||[]).map(n=>({
+      id:n.id,
+      type:n.type,
+      title:n.title || (n.type==="mention" ? "メンション" : "通知"),
+      body:n.body || "",
+      server_id:n.server_id,
+      channel_id:n.channel_id,
+      message_id:n.message_id,
+      read_at:n.read_at,
+      created_at:n.created_at
+    }));
     res.json({ok:true,notifications,unread:notifications.filter(n=>!n.read_at).length});
   }catch(error){ console.error("Notification load error:",error); res.status(500).json({ok:false,error:"通知を取得できませんでした"}); }
 });
 app.post("/api/notifications/read", requireAccount, async (req,res)=>{
   try{
-    const {error}=await supabase.from("notifications").update({is_read:true}).eq("recipient_id",req.account.id).eq("is_read",false);
+    const {error}=await supabase
+      .from("notifications")
+      .update({read_at:new Date().toISOString()})
+      .eq("account_id",req.account.id)
+      .is("read_at",null);
     if(error) throw error;
     res.json({ok:true});
   }catch(error){ console.error("Notification read error:",error); res.status(500).json({ok:false,error:"通知を既読にできませんでした"}); }
@@ -717,13 +736,40 @@ async function createMentionNotifications(text, message, serverId, channelId){
   const names=[...String(text||"").matchAll(/@([A-Za-z0-9_]{3,24})/g)].map(m=>m[1].toLowerCase());
   if(!names.length) return;
   const unique=[...new Set(names)];
-  const {data:targets,error}=await supabase.from("accounts").select("id,username").in("username",unique);
+  const {data:targets,error}=await supabase.from("accounts").select("id,username,display_name").in("username",unique);
   if(error) { console.error("Mention lookup error:",error); return; }
-  const rows=(targets||[]).filter(t=>String(t.id)!==String(message.accountId)).map(t=>({
-    recipient_id:t.id,type:"mention",message:`${message.user} さんがあなたをメンションしました: ${String(text).slice(0,450)}`,server_id:serverId,channel_id:channelId,actor_id:message.accountId
-  }));
-  if(rows.length){ const {error:ne}=await supabase.from("notifications").insert(rows); if(ne) console.error("Mention notification error:",ne); }
-  for(const t of targets||[]){ if(String(t.id)!==String(message.accountId)) await sendToAccount(t.id,{type:"notification",notification:{title:`${message.user} さんがあなたをメンションしました`,body:String(text).slice(0,500),serverId,channelId,messageId:message.id}}); }
+
+  const rows=(targets||[])
+    .filter(t=>String(t.id)!==String(message.accountId))
+    .map(t=>({
+      account_id:t.id,
+      type:"mention",
+      title:`${message.user} さんがあなたをメンションしました`,
+      body:String(text).slice(0,500),
+      server_id:serverId,
+      channel_id:channelId,
+      message_id:message.id
+    }));
+
+  if(rows.length){
+    const {error:ne}=await supabase.from("notifications").insert(rows);
+    if(ne) console.error("Mention notification error:",ne);
+  }
+
+  for(const t of targets||[]){
+    if(String(t.id)!==String(message.accountId)){
+      await sendToAccount(t.id,{
+        type:"notification",
+        notification:{
+          title:`${message.user} さんがあなたをメンションしました`,
+          body:String(text).slice(0,500),
+          serverId,
+          channelId,
+          messageId:message.id
+        }
+      });
+    }
+  }
 }
 
 app.post("/api/upload", requireAccount, upload.single("file"), async (req, res) => {
