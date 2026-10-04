@@ -780,13 +780,19 @@ async function createMentionNotifications(text, message, serverId, channelId){
     ? `${message.user} さんが @everyone でメンションしました`
     : `${message.user} さんがあなたをメンションしました`;
   const rows=[...targets.values()].map(t=>({
+    // New notification schema
     account_id:t.id,
     type:"mention",
     title,
     body:raw.slice(0,500),
     server_id:serverId,
     channel_id:channelId,
-    message_id:message.id
+    message_id:message.id,
+    // Keep legacy NOT NULL columns populated during the compatibility period.
+    recipient_id:t.id,
+    message:raw.slice(0,500),
+    actor_id:message.accountId || null,
+    is_read:false
   }));
 
   if(rows.length){
