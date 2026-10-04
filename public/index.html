@@ -151,7 +151,7 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 .notifications{position:relative}.notification-btn{border:0;background:transparent;color:#ddd;font-size:20px;cursor:pointer;position:relative}.notification-badge{position:absolute;right:-5px;top:-5px;min-width:16px;height:16px;padding:0 4px;border-radius:9px;background:#ed4245;color:#fff;font-size:10px;display:grid;place-items:center}.notification-panel{position:absolute;right:12px;top:52px;width:340px;max-height:430px;overflow:auto;background:#17191f;border:1px solid var(--line);border-radius:10px;z-index:30;box-shadow:0 15px 50px #0009}.notification-head{display:flex;justify-content:space-between;align-items:center;padding:12px;border-bottom:1px solid var(--line);font-weight:700}.notification-item{padding:12px;border-bottom:1px solid #262934;cursor:pointer}.notification-item.unread{background:#20232c}.notification-item small{display:block;color:var(--muted);margin-top:4px}.role-btn{background:var(--accent)!important}.server-member-role{font-size:11px;color:var(--muted);margin-top:3px}.modal-close{position:absolute;right:10px;top:8px;border:0;background:transparent;color:#bbb;font-size:24px;cursor:pointer}.server-profile-wrap{position:relative}
 </head>
 <body>
-<div id="startupOverlay" class="startup-overlay">
+<div id="startupOverlay" class="startup-overlay hidden">
   <div class="startup-card">
     <div class="startup-logo">Yamato <span>Chat</span></div>
     <div class="startup-spinner"></div>
@@ -317,6 +317,22 @@ body{margin:0;height:100vh;background:var(--bg);color:var(--text);font-family:sy
 
 <script>
 let ws;
+
+// Boot safety: if an early client-side error occurs, never leave the user on a blank startup screen.
+window.addEventListener("error", (event) => {
+  try {
+    document.getElementById("startupOverlay")?.classList.add("hidden");
+    document.getElementById("authOverlay")?.classList.remove("hidden");
+  } catch (_) {}
+  console.error("Yamato Chat client error:", event.error || event.message);
+});
+window.addEventListener("unhandledrejection", (event) => {
+  try {
+    document.getElementById("startupOverlay")?.classList.add("hidden");
+    document.getElementById("authOverlay")?.classList.remove("hidden");
+  } catch (_) {}
+  console.error("Yamato Chat client rejection:", event.reason);
+});
 let myId = "";
 let currentServerRole = "member";
 let notificationItems = [];
@@ -1534,13 +1550,16 @@ async function waitForBackend() {
   const overlay = $("startupOverlay");
   const status = $("startupStatus");
 
-  // When this HTML is opened directly from Windows (file://),
-  // do not block the UI behind the Render wake-up screen.
-  // The login request itself will wake Render and has CORS enabled.
+  // file:// mode: keep the startup screen hidden and show login immediately.
   if (location.protocol === "file:") {
     overlay.classList.add("hidden");
+    setAuthVisible(true);
+    showLogin();
     return;
   }
+
+  // Web/Render mode: show the wake-up screen while the backend starts.
+  overlay.classList.remove("hidden");
 
   while (true) {
     try {
